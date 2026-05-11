@@ -1,0 +1,12 @@
+Done.
+MANE Select transcripts loaded: 19338
+Total GTF records: 2093542
+Total GTF exon records: 934455
+Non-canonical chromosome exon records skipped: 81005
+Gene-name mismatch exon records skipped: 1712
+Matched MANE exon records: 196292
+Matched genes: 18594
+Matched transcripts: 18594
+Output exon TXT: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/db/exon_annotation_bed/RefSeq_MANE_Select.exon.txt
+Output gene TXT: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/db/exon_annotation_bed/RefSeq_MANE_Select.gene.txt
+Unmatched MANE transcript report: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/db/exon_annotation_bed/RefSeq_MANE_Select.unmatched.txt
