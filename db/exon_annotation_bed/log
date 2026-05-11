@@ -1,0 +1,10 @@
+Done.
+MANE transcripts loaded: 19338
+Total GTF records: 2093542
+Total GTF exon records: 934455
+Non-canonical chromosome exon records skipped: 81005
+Matched MANE exon records: 196292
+Matched genes: 18594
+Matched transcripts: 18594
+Output BED: RefSeq_MANE_Select.exon.bed
+Unmatched MANE transcript report: RefSeq_MANE_Select.unmatched.tsv

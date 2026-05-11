@@ -1,0 +1,5 @@
+# download
+https://ftp.ncbi.nlm.nih.gov/refseq/MANE/MANE_human/current/
+
+perl Parse_MANE_Summary_File.pl >RefSeq_MANE_Select.xls
+
