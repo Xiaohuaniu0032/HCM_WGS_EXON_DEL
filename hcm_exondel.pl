@@ -12,17 +12,17 @@ use FindBin qw($Bin);
 # ============================================================
 # HCMExonDel main pipeline
 #
-# Design:
-#   1. Only BAM list mode is supported.
-#   2. One BAM file path per line.
-#   3. Sample name is derived from BAM basename.
-#   4. All interval files use tab-delimited TXT format.
-#   5. Coordinates in interval TXT files are 1-based closed.
-#   6. No BED conversion is performed in this main script.
+# Function:
+#   Generate one shell script for each BAM sample.
 #
-# Required interval files in config:
-#   REFSEQ_MANE_SELECT_EXON_TXT
-#   REFSEQ_MANE_SELECT_GENE_TXT
+# Input:
+#   1. Config file
+#   2. BAM list, one BAM file per line
+#
+# Output:
+#   <outdir>/sample_shell.list
+#   <outdir>/qsub_command.list
+#   <outdir>/<sample>/<sample>.run.sh
 #
 # Workflow:
 #   1. gene_mean_depth
@@ -30,23 +30,18 @@ use FindBin qw($Bin);
 #   3. discordant_reads
 #   4. merge_evidence
 #   5. annotate_candidates
-#
-# Note:
-#   check_bam.pl is not called at this stage.
 # ============================================================
 
 my $config;
 my $bam_list;
 my $outdir = "results";
-my $shell;
-my $force = 0;
-my $help  = 0;
+my $force  = 0;
+my $help   = 0;
 
 GetOptions(
     "config=s"   => \$config,
     "bam-list=s" => \$bam_list,
     "outdir=s"   => \$outdir,
-    "shell=s"    => \$shell,
     "force"      => \$force,
     "help"       => \$help,
 ) or die usage();
@@ -64,261 +59,291 @@ die "[ERROR] Config file not found: $config\n" unless $config && -s $config;
 $bam_list = abs_path($bam_list);
 die "[ERROR] BAM list file not found: $bam_list\n" unless $bam_list && -s $bam_list;
 
-# -----------------------------
-# Read config
-# -----------------------------
 my %CONF = read_config($config);
 
 my $perl     = get_conf(\%CONF, "PERL", "perl");
 my $threads  = get_conf(\%CONF, "THREADS", 4);
 my $keep_tmp = get_conf(\%CONF, "KEEP_TMP", 0);
 
-my $exon_txt = get_conf(\%CONF, "REFSEQ_MANE_SELECT_EXON_TXT", "");
-my $gene_txt = get_conf(\%CONF, "REFSEQ_MANE_SELECT_GENE_TXT", "");
+my $exon_txt = resolve_path(
+    get_conf(\%CONF, "REFSEQ_MANE_SELECT_EXON_TXT", ""),
+    $Bin
+);
 
-die "[ERROR] REFSEQ_MANE_SELECT_EXON_TXT is required in config\n" unless $exon_txt;
-die "[ERROR] REFSEQ_MANE_SELECT_GENE_TXT is required in config\n" unless $gene_txt;
+my $gene_txt = resolve_path(
+    get_conf(\%CONF, "REFSEQ_MANE_SELECT_GENE_TXT", ""),
+    $Bin
+);
 
-$exon_txt = abs_path($exon_txt);
-$gene_txt = abs_path($gene_txt);
-
-die "[ERROR] Exon TXT file not found: $exon_txt\n" unless $exon_txt && -s $exon_txt;
-die "[ERROR] Gene TXT file not found: $gene_txt\n" unless $gene_txt && -s $gene_txt;
+die "[ERROR] Exon TXT file not found: $exon_txt\n" unless -s $exon_txt;
+die "[ERROR] Gene TXT file not found: $gene_txt\n" unless -s $gene_txt;
 
 check_exon_txt_format($exon_txt);
 check_gene_txt_format($gene_txt);
 
-# -----------------------------
-# Prepare output directory
-# -----------------------------
+$outdir = abs_path($outdir) || $outdir;
 make_path($outdir) unless -d $outdir;
 $outdir = abs_path($outdir);
 
-$shell ||= "$outdir/run_hcm_exondel.sh";
+my %SCRIPT = (
+    depth      => "$Bin/bin/run_gene_mean_depth.pl",
+    split      => "$Bin/bin/run_split_reads.pl",
+    discordant => "$Bin/bin/run_discordant_reads.pl",
+    merge      => "$Bin/bin/merge_evidence.pl",
+    annotate   => "$Bin/bin/annotate_candidates.pl",
+);
 
-if (-e $shell && !$force) {
-    die "[ERROR] Shell file already exists: $shell\n"
-      . "        Please use --force to overwrite it or specify another --shell\n";
+foreach my $key (sort keys %SCRIPT) {
+    check_script($SCRIPT{$key});
 }
 
-# -----------------------------
-# Check dependent scripts
-# -----------------------------
-my $script_depth      = "$Bin/bin/run_gene_mean_depth.pl";
-my $script_split      = "$Bin/bin/run_split_reads.pl";
-my $script_discordant = "$Bin/bin/run_discordant_reads.pl";
-my $script_merge      = "$Bin/bin/merge_evidence.pl";
-my $script_annotate   = "$Bin/bin/annotate_candidates.pl";
-
-check_script($script_depth);
-check_script($script_split);
-check_script($script_discordant);
-check_script($script_merge);
-check_script($script_annotate);
-
-# -----------------------------
-# Read BAM list
-# -----------------------------
 my @samples = read_bam_list($bam_list);
 die "[ERROR] No valid BAM found in BAM list: $bam_list\n" unless @samples;
 
-# -----------------------------
-# Print summary
-# -----------------------------
-print "\n";
-print "============================================================\n";
-print " HCMExonDel shell generation\n";
-print "============================================================\n";
-print "Config file  : $config\n";
-print "BAM list     : $bam_list\n";
-print "Exon TXT     : $exon_txt\n";
-print "Gene TXT     : $gene_txt\n";
-print "Outdir       : $outdir\n";
-print "Threads      : $threads\n";
-print "Keep tmp     : $keep_tmp\n";
-print "Samples      : " . scalar(@samples) . "\n";
-print "Shell        : $shell\n";
-print "============================================================\n\n";
+my $shell_list = "$outdir/sample_shell.list";
+my $qsub_list  = "$outdir/qsub_command.list";
 
-# -----------------------------
-# Generate shell
-# -----------------------------
-open my $SH, ">", $shell or die "[ERROR] Cannot write shell file: $shell\n";
+open my $LIST, ">", $shell_list or die "[ERROR] Cannot write: $shell_list\n";
+open my $QSUB, ">", $qsub_list  or die "[ERROR] Cannot write: $qsub_list\n";
 
-print_shell_header(
-    fh       => $SH,
-    config   => $config,
-    bam_list => $bam_list,
-    exon_txt => $exon_txt,
-    gene_txt => $gene_txt,
-    outdir   => $outdir,
-    threads  => $threads,
+print_summary(
+    config     => $config,
+    bam_list   => $bam_list,
+    exon_txt   => $exon_txt,
+    gene_txt   => $gene_txt,
+    outdir     => $outdir,
+    threads    => $threads,
+    keep_tmp   => $keep_tmp,
+    sample_num => scalar(@samples),
+    shell_list => $shell_list,
+    qsub_list  => $qsub_list,
 );
 
 foreach my $item (@samples) {
     my $sample = $item->{sample};
     my $bam    = $item->{bam};
 
-    my $sample_dir     = "$outdir/$sample";
-    my $log_dir        = "$sample_dir/00.log";
-    my $depth_dir      = "$sample_dir/01.depth";
-    my $split_dir      = "$sample_dir/02.split_reads";
-    my $discordant_dir = "$sample_dir/03.discordant_reads";
-    my $candidate_dir  = "$sample_dir/04.candidates";
-    my $report_dir     = "$sample_dir/05.report";
-    my $tmp_dir        = "$sample_dir/tmp";
+    my %DIR = prepare_sample_dirs($outdir, $sample, $force);
 
-    if (-d $sample_dir && !$force) {
-        die "[ERROR] Sample output directory already exists: $sample_dir\n"
-          . "        Please use --force to allow existing sample directories\n";
-    }
+    my %OUT = (
+        depth      => "$DIR{depth}/$sample.depth_candidates.tsv",
+        split      => "$DIR{split}/$sample.split_reads.tsv",
+        discordant => "$DIR{discordant}/$sample.discordant_reads.tsv",
+        merged     => "$DIR{candidate}/$sample.merged_candidates.tsv",
+        annotated  => "$DIR{report}/$sample.annotated_candidates.tsv",
+    );
 
-    make_path($log_dir);
-    make_path($depth_dir);
-    make_path($split_dir);
-    make_path($discordant_dir);
-    make_path($candidate_dir);
-    make_path($report_dir);
-    make_path($tmp_dir);
+    my $sample_shell = "$DIR{sample}/$sample.run.sh";
 
-    my $depth_out      = "$depth_dir/$sample.depth_candidates.tsv";
-    my $split_out      = "$split_dir/$sample.split_reads.tsv";
-    my $discordant_out = "$discordant_dir/$sample.discordant_reads.tsv";
-    my $merged_out     = "$candidate_dir/$sample.merged_candidates.tsv";
-    my $annotated_out  = "$report_dir/$sample.annotated_candidates.tsv";
+    write_sample_shell(
+        shell      => $sample_shell,
+        sample     => $sample,
+        bam        => $bam,
+        config     => $config,
+        exon_txt   => $exon_txt,
+        gene_txt   => $gene_txt,
+        perl       => $perl,
+        threads    => $threads,
+        keep_tmp   => $keep_tmp,
+        script_ref => \%SCRIPT,
+        dir_ref    => \%DIR,
+        out_ref    => \%OUT,
+    );
 
-    print $SH "\n";
-    print $SH "############################################################\n";
-    print $SH "# Sample: $sample\n";
-    print $SH "############################################################\n";
-    print $SH "echo \"[INFO] Start sample: $sample \$(date)\"\n";
-    print $SH "mkdir -p "
-        . shell_quote($log_dir) . " "
-        . shell_quote($depth_dir) . " "
-        . shell_quote($split_dir) . " "
-        . shell_quote($discordant_dir) . " "
-        . shell_quote($candidate_dir) . " "
-        . shell_quote($report_dir) . " "
-        . shell_quote($tmp_dir) . "\n\n";
+    chmod 0755, $sample_shell
+        or die "[ERROR] Cannot chmod sample shell: $sample_shell\n";
 
-    print $SH "echo \"[INFO] Step 1: gene_mean_depth for $sample \$(date)\"\n";
-    print $SH join(" ",
-        shell_quote($perl),
-        shell_quote($script_depth),
-        "--config", shell_quote($config),
-        "--bam",    shell_quote($bam),
-        "--sample", shell_quote($sample),
-        "--out",    shell_quote($depth_out),
-        "--threads", $threads
-    ) . " > " . shell_quote("$log_dir/01.gene_mean_depth.log") . " 2>&1\n\n";
+    print $LIST "$sample_shell\n";
+    print $QSUB "qsub -cwd -l p=$threads,vf=4G -binding linear:$threads -N HCMExonDel_$sample $sample_shell\n";
 
-    print $SH "echo \"[INFO] Step 2: split_reads for $sample \$(date)\"\n";
-    print $SH join(" ",
-        shell_quote($perl),
-        shell_quote($script_split),
-        "--config", shell_quote($config),
-        "--bam",    shell_quote($bam),
-        "--sample", shell_quote($sample),
-        "--out",    shell_quote($split_out),
-        "--threads", $threads
-    ) . " > " . shell_quote("$log_dir/02.split_reads.log") . " 2>&1\n\n";
-
-    print $SH "echo \"[INFO] Step 3: discordant_reads for $sample \$(date)\"\n";
-    print $SH join(" ",
-        shell_quote($perl),
-        shell_quote($script_discordant),
-        "--config", shell_quote($config),
-        "--bam",    shell_quote($bam),
-        "--sample", shell_quote($sample),
-        "--out",    shell_quote($discordant_out),
-        "--threads", $threads
-    ) . " > " . shell_quote("$log_dir/03.discordant_reads.log") . " 2>&1\n\n";
-
-    print $SH "echo \"[INFO] Step 4: merge_evidence for $sample \$(date)\"\n";
-    print $SH join(" ",
-        shell_quote($perl),
-        shell_quote($script_merge),
-        "--config",     shell_quote($config),
-        "--sample",     shell_quote($sample),
-        "--depth",      shell_quote($depth_out),
-        "--split",      shell_quote($split_out),
-        "--discordant", shell_quote($discordant_out),
-        "--out",        shell_quote($merged_out)
-    ) . " > " . shell_quote("$log_dir/04.merge_evidence.log") . " 2>&1\n\n";
-
-    print $SH "echo \"[INFO] Step 5: annotate_candidates for $sample \$(date)\"\n";
-    print $SH join(" ",
-        shell_quote($perl),
-        shell_quote($script_annotate),
-        "--config", shell_quote($config),
-        "--input",  shell_quote($merged_out),
-        "--out",    shell_quote($annotated_out)
-    ) . " > " . shell_quote("$log_dir/05.annotate_candidates.log") . " 2>&1\n\n";
-
-    if (!$keep_tmp) {
-        print $SH "rm -rf " . shell_quote($tmp_dir) . "\n\n";
-    }
-
-    print $SH "echo \"[INFO] Finished sample: $sample \$(date)\"\n";
-    print $SH "echo \"[INFO] Annotated candidates: $annotated_out\"\n";
+    print "[INFO] Sample shell generated: $sample_shell\n";
 }
 
-print $SH "\n";
-print $SH "echo \"[INFO] All samples finished \$(date)\"\n";
+close $LIST;
+close $QSUB;
 
-close $SH;
-
-chmod 0755, $shell or die "[ERROR] Cannot chmod shell file: $shell\n";
-
-print "[INFO] Shell generated successfully\n";
-print "[INFO] Shell file: $shell\n";
-print "[INFO] Run command:\n";
-print "       bash $shell\n\n";
+print "\n";
+print "[INFO] All sample shells generated successfully\n";
+print "[INFO] Shell list: $shell_list\n";
+print "[INFO] Qsub list : $qsub_list\n";
+print "\n";
+print "Run locally:\n";
+print "  while read sh; do bash \$sh; done < $shell_list\n";
+print "\n";
+print "Submit by qsub:\n";
+print "  sh $qsub_list\n\n";
 
 exit 0;
 
 # ============================================================
-# Subroutines
+# Main shell writer
 # ============================================================
 
-sub read_config {
-    my ($file) = @_;
-    my %conf;
+sub write_sample_shell {
+    my %args = @_;
 
-    open my $FH, "<", $file or die "[ERROR] Cannot open config file: $file\n";
+    my $shell      = $args{shell};
+    my $sample     = $args{sample};
+    my $bam        = $args{bam};
+    my $config     = $args{config};
+    my $exon_txt   = $args{exon_txt};
+    my $gene_txt   = $args{gene_txt};
+    my $perl       = $args{perl};
+    my $threads    = $args{threads};
+    my $keep_tmp   = $args{keep_tmp};
+    my $script_ref = $args{script_ref};
+    my $dir_ref    = $args{dir_ref};
+    my $out_ref    = $args{out_ref};
 
-    while (my $line = <$FH>) {
-        chomp $line;
-        $line =~ s/\r$//;
+    open my $SH, ">", $shell or die "[ERROR] Cannot write sample shell: $shell\n";
 
-        next if $line =~ /^\s*$/;
-        next if $line =~ /^\s*#/;
+    write_header(
+        fh       => $SH,
+        sample   => $sample,
+        config   => $config,
+        bam      => $bam,
+        exon_txt => $exon_txt,
+        gene_txt => $gene_txt,
+        outdir   => $dir_ref->{sample},
+        threads  => $threads,
+    );
 
-        if ($line =~ /^\s*([^=\s]+)\s*=\s*(.*?)\s*$/) {
-            my $key = $1;
-            my $val = $2;
+    my $mkdir_cmd = join(" ",
+        "mkdir -p",
+        $dir_ref->{log},
+        $dir_ref->{depth},
+        $dir_ref->{split},
+        $dir_ref->{discordant},
+        $dir_ref->{candidate},
+        $dir_ref->{report},
+        $dir_ref->{tmp},
+    );
 
-            $val =~ s/\s+#.*$//;
-            $val =~ s/^\s+|\s+$//g;
-            $val =~ s/^['"]//;
-            $val =~ s/['"]$//;
+    write_block($SH, "Start sample: $sample");
+    print $SH "$mkdir_cmd\n\n";
 
-            $conf{$key} = $val;
-        }
+    my $cmd;
+
+    $cmd = "$perl $script_ref->{depth} "
+         . "--config $config "
+         . "--bam $bam "
+         . "--sample $sample "
+         . "--out $out_ref->{depth} "
+         . "--threads $threads";
+    write_cmd($SH, "Step 1: gene_mean_depth", $cmd, "$dir_ref->{log}/01.gene_mean_depth.log");
+
+    $cmd = "$perl $script_ref->{split} "
+         . "--config $config "
+         . "--bam $bam "
+         . "--sample $sample "
+         . "--out $out_ref->{split} "
+         . "--threads $threads";
+    write_cmd($SH, "Step 2: split_reads", $cmd, "$dir_ref->{log}/02.split_reads.log");
+
+    $cmd = "$perl $script_ref->{discordant} "
+         . "--config $config "
+         . "--bam $bam "
+         . "--sample $sample "
+         . "--out $out_ref->{discordant} "
+         . "--threads $threads";
+    write_cmd($SH, "Step 3: discordant_reads", $cmd, "$dir_ref->{log}/03.discordant_reads.log");
+
+    $cmd = "$perl $script_ref->{merge} "
+         . "--config $config "
+         . "--sample $sample "
+         . "--depth $out_ref->{depth} "
+         . "--split $out_ref->{split} "
+         . "--discordant $out_ref->{discordant} "
+         . "--out $out_ref->{merged}";
+    write_cmd($SH, "Step 4: merge_evidence", $cmd, "$dir_ref->{log}/04.merge_evidence.log");
+
+    $cmd = "$perl $script_ref->{annotate} "
+         . "--config $config "
+         . "--input $out_ref->{merged} "
+         . "--out $out_ref->{annotated}";
+    write_cmd($SH, "Step 5: annotate_candidates", $cmd, "$dir_ref->{log}/05.annotate_candidates.log");
+
+    if (!$keep_tmp) {
+        print $SH "rm -rf $dir_ref->{tmp}\n\n";
     }
 
-    close $FH;
-    return %conf;
+    print $SH "echo \"[INFO] Finished sample: $sample \$(date)\"\n";
+    print $SH "echo \"[INFO] Annotated candidates: $out_ref->{annotated}\"\n";
+
+    close $SH;
 }
 
-sub get_conf {
-    my ($conf_ref, $key, $default) = @_;
+sub write_header {
+    my %args = @_;
 
-    if (exists $conf_ref->{$key} && defined $conf_ref->{$key} && $conf_ref->{$key} ne "") {
-        return $conf_ref->{$key};
+    my $FH      = $args{fh};
+    my $sample  = $args{sample};
+    my $config  = $args{config};
+    my $bam     = $args{bam};
+    my $exon    = $args{exon_txt};
+    my $gene    = $args{gene_txt};
+    my $outdir  = $args{outdir};
+    my $threads = $args{threads};
+
+    print $FH <<"HEADER";
+#!/usr/bin/env bash
+set -euo pipefail
+
+############################################################
+# Auto-generated by hcm_exondel.pl
+# Sample   : $sample
+# Config   : $config
+# BAM      : $bam
+# Exon TXT : $exon
+# Gene TXT : $gene
+# Outdir   : $outdir
+# Threads  : $threads
+############################################################
+
+HEADER
+}
+
+sub write_block {
+    my ($fh, $message) = @_;
+
+    print $fh "echo \"[INFO] $message \$(date)\"\n";
+}
+
+sub write_cmd {
+    my ($fh, $message, $cmd, $log) = @_;
+
+    print $fh "echo \"[INFO] $message \$(date)\"\n";
+    print $fh "$cmd > $log 2>&1\n\n";
+}
+
+# ============================================================
+# Directory and input preparation
+# ============================================================
+
+sub prepare_sample_dirs {
+    my ($outdir, $sample, $force) = @_;
+
+    my %dir;
+
+    $dir{sample}     = "$outdir/$sample";
+    $dir{log}        = "$dir{sample}/00.log";
+    $dir{depth}      = "$dir{sample}/01.depth";
+    $dir{split}      = "$dir{sample}/02.split_reads";
+    $dir{discordant} = "$dir{sample}/03.discordant_reads";
+    $dir{candidate}  = "$dir{sample}/04.candidates";
+    $dir{report}     = "$dir{sample}/05.report";
+    $dir{tmp}        = "$dir{sample}/tmp";
+
+    if (-d $dir{sample} && !$force) {
+        die "[ERROR] Sample output directory already exists: $dir{sample}\n"
+          . "        Please use --force to allow existing sample directories\n";
     }
 
-    return $default;
+    foreach my $key (keys %dir) {
+        make_path($dir{$key}) unless -d $dir{$key};
+    }
+
+    return %dir;
 }
 
 sub read_bam_list {
@@ -408,6 +433,74 @@ sub check_bam_index {
     return 1;
 }
 
+# ============================================================
+# Config and path functions
+# ============================================================
+
+sub read_config {
+    my ($file) = @_;
+    my %conf;
+
+    open my $FH, "<", $file or die "[ERROR] Cannot open config file: $file\n";
+
+    while (my $line = <$FH>) {
+        chomp $line;
+        $line =~ s/\r$//;
+
+        next if $line =~ /^\s*$/;
+        next if $line =~ /^\s*#/;
+
+        if ($line =~ /^\s*([^=\s]+)\s*=\s*(.*?)\s*$/) {
+            my $key = $1;
+            my $val = $2;
+
+            $val =~ s/\s+#.*$//;
+            $val =~ s/^\s+|\s+$//g;
+            $val =~ s/^['"]//;
+            $val =~ s/['"]$//;
+
+            $conf{$key} = $val;
+        }
+    }
+
+    close $FH;
+    return %conf;
+}
+
+sub get_conf {
+    my ($conf_ref, $key, $default) = @_;
+
+    if (exists $conf_ref->{$key} && defined $conf_ref->{$key} && $conf_ref->{$key} ne "") {
+        return $conf_ref->{$key};
+    }
+
+    return $default;
+}
+
+sub resolve_path {
+    my ($path, $base_dir) = @_;
+
+    die "[ERROR] Empty path provided\n"
+        unless defined $path && $path ne "";
+
+    if ($path =~ /^\//) {
+        my $abs = abs_path($path);
+        die "[ERROR] Path not found: $path\n" unless defined $abs;
+        return $abs;
+    }
+
+    my $full = "$base_dir/$path";
+    my $abs  = abs_path($full);
+
+    die "[ERROR] Path not found: $full\n" unless defined $abs;
+
+    return $abs;
+}
+
+# ============================================================
+# Format checks
+# ============================================================
+
 sub check_script {
     my ($script) = @_;
 
@@ -420,7 +513,6 @@ sub check_exon_txt_format {
     my ($file) = @_;
 
     open my $FH, "<", $file or die "[ERROR] Cannot open exon TXT: $file\n";
-
     my $header = <$FH>;
     close $FH;
 
@@ -442,7 +534,6 @@ sub check_gene_txt_format {
     my ($file) = @_;
 
     open my $FH, "<", $file or die "[ERROR] Cannot open gene TXT: $file\n";
-
     my $header = <$FH>;
     close $FH;
 
@@ -460,39 +551,28 @@ sub check_gene_txt_format {
     return 1;
 }
 
-sub print_shell_header {
+# ============================================================
+# Summary and usage
+# ============================================================
+
+sub print_summary {
     my %args = @_;
 
-    my $FH       = $args{fh};
-    my $config   = $args{config};
-    my $bam_list = $args{bam_list};
-    my $exon_txt = $args{exon_txt};
-    my $gene_txt = $args{gene_txt};
-    my $outdir   = $args{outdir};
-    my $threads  = $args{threads};
-
-    print $FH "#!/usr/bin/env bash\n";
-    print $FH "set -euo pipefail\n\n";
-    print $FH "############################################################\n";
-    print $FH "# Auto-generated by hcm_exondel.pl\n";
-    print $FH "# Config   : $config\n";
-    print $FH "# BAM list : $bam_list\n";
-    print $FH "# Exon TXT : $exon_txt\n";
-    print $FH "# Gene TXT : $gene_txt\n";
-    print $FH "# Outdir   : $outdir\n";
-    print $FH "# Threads  : $threads\n";
-    print $FH "############################################################\n\n";
-    print $FH "echo \"[INFO] HCMExonDel workflow started \$(date)\"\n";
-}
-
-sub shell_quote {
-    my ($str) = @_;
-
-    return "''" unless defined $str;
-
-    $str =~ s/'/'"'"'/g;
-
-    return "'$str'";
+    print "\n";
+    print "============================================================\n";
+    print " HCMExonDel sample shell generation\n";
+    print "============================================================\n";
+    print "Config file : $args{config}\n";
+    print "BAM list    : $args{bam_list}\n";
+    print "Exon TXT    : $args{exon_txt}\n";
+    print "Gene TXT    : $args{gene_txt}\n";
+    print "Outdir      : $args{outdir}\n";
+    print "Threads     : $args{threads}\n";
+    print "Keep tmp    : $args{keep_tmp}\n";
+    print "Samples     : $args{sample_num}\n";
+    print "Shell list  : $args{shell_list}\n";
+    print "Qsub list   : $args{qsub_list}\n";
+    print "============================================================\n\n";
 }
 
 sub usage {
@@ -511,46 +591,13 @@ Required arguments:
 
 Optional arguments:
   --outdir       Output directory. [default: results]
-  --shell        Output shell file. [default: <outdir>/run_hcm_exondel.sh]
-  --force        Overwrite existing shell and allow existing sample directories.
+  --force        Overwrite existing sample directories.
   --help         Show this help message.
 
-Required interval TXT files in config:
-  REFSEQ_MANE_SELECT_EXON_TXT
-  REFSEQ_MANE_SELECT_GENE_TXT
-
-Expected exon TXT format:
-  Gene    Transcript    Exon    Chrom    Start    End    Strand
-
-Expected gene TXT format:
-  Gene    Transcript    Chrom    Start    End    Strand    ExonCount
-
-Coordinate:
-  All TXT interval files are 1-based closed intervals.
-
-BAM list format:
-  /path/to/sample1.sorted.bam
-  /path/to/sample2.markdup.bam
-  /path/to/sample3.bam
-
-Generated workflow:
-  gene_mean_depth
-  split_reads
-  discordant_reads
-  merge_evidence
-  annotate_candidates
-
-Output structure:
-  results/
-  ├── run_hcm_exondel.sh
-  └── SAMPLE001/
-      ├── 00.log/
-      ├── 01.depth/
-      ├── 02.split_reads/
-      ├── 03.discordant_reads/
-      ├── 04.candidates/
-      ├── 05.report/
-      └── tmp/
+Output:
+  <outdir>/sample_shell.list
+  <outdir>/qsub_command.list
+  <outdir>/<sample>/<sample>.run.sh
 
 USAGE
 }
