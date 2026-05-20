@@ -11,19 +11,21 @@ use Cwd qw(abs_path getcwd);
 # ============================================================
 # annotate_candidates.pl
 #
-# Annotate merged candidate deletion regions with MANE RefSeq
-# exon annotation.
+# Annotate candidate deletion regions with MANE RefSeq exon
+# annotation and output compact review-friendly TSV files.
 #
-# Input:
-#   merged_candidates.tsv or final_report.tsv from merge_evidence.pl
+# IMPORTANT:
+#   This script keeps --out for compatibility with the main pipeline.
 #
-# Required input columns:
-#   Chrom
-#   Start
-#   End
+#   --out is used as an output anchor.
+#   The real output directory is dirname(--out).
 #
-# Required when ANNOTATE_EVIDENCE_LEVEL is not All:
-#   Evidence_Level
+# Output files:
+#   <sample>.Evidence_Level.High.tsv
+#   <sample>.Evidence_Level.Other.tsv
+#
+# Sample source:
+#   The sample name is taken from the first column of the input file.
 #
 # Config parameters used:
 #   REFSEQ_MANE_SELECT_EXON_TXT
@@ -32,12 +34,6 @@ use Cwd qw(abs_path getcwd);
 #
 # Exon TXT format:
 #   Gene    Transcript    Exon    Chrom    Start    End    Strand
-#
-# Coordinate system:
-#   1-based closed interval
-#
-# Default behavior:
-#   ANNOTATE_EVIDENCE_LEVEL=High
 # ============================================================
 
 my $config;
@@ -73,7 +69,8 @@ my $config_dir   = dirname($config);
 my $exon_txt = get_conf_required(\%CONF, "REFSEQ_MANE_SELECT_EXON_TXT");
 $exon_txt = resolve_path($exon_txt, $project_root, $config_dir);
 
-die "[ERROR] REFSEQ_MANE_SELECT_EXON_TXT file not found: $exon_txt\n" unless -s $exon_txt;
+die "[ERROR] REFSEQ_MANE_SELECT_EXON_TXT file not found: $exon_txt\n"
+    unless -s $exon_txt;
 
 my $min_exon_overlap_fraction = get_conf_value(
     \%CONF,
@@ -100,53 +97,37 @@ die "[ERROR] ANNOTATE_EVIDENCE_LEVEL is empty\n"
     if !defined $annotate_evidence_level || $annotate_evidence_level eq "";
 
 my $annotate_all = 0;
+
 if (lc($annotate_evidence_level) eq "all") {
     $annotate_all = 1;
-}
-
-my $outdir = dirname($out);
-make_path($outdir) unless -d $outdir;
-
-print "[INFO] Candidate annotation started\n";
-print "[INFO] Config                    : $config\n";
-print "[INFO] Project root              : $project_root\n";
-print "[INFO] Input candidate file       : $input\n";
-print "[INFO] Exon TXT                  : $exon_txt\n";
-print "[INFO] Min exon overlap fraction : $min_exon_overlap_fraction\n";
-print "[INFO] Annotate evidence level   : $annotate_evidence_level\n";
-print "[INFO] Annotate all candidates   : $annotate_all\n";
-print "[INFO] Output                    : $out\n";
-
-# ============================================================
-# Step 1. Read exon annotation
-# ============================================================
-
-my @exons = read_exon_txt($exon_txt);
-
-die "[ERROR] No valid exon records found in REFSEQ_MANE_SELECT_EXON_TXT: $exon_txt\n"
-    unless @exons;
-
-my %exons_by_chr;
-
-foreach my $exon (@exons) {
-    push @{ $exons_by_chr{ $exon->{chrom} } }, $exon;
-}
-
-foreach my $chr (keys %exons_by_chr) {
-    @{ $exons_by_chr{$chr} } = sort {
-        $a->{start} <=> $b->{start} ||
-        $a->{end}   <=> $b->{end}
-    } @{ $exons_by_chr{$chr} };
+    $annotate_evidence_level = "All";
 }
 
 # ============================================================
-# Step 2. Read candidate file
+# Step 1. Read candidate file first
+#         Sample name is taken from the first column.
 # ============================================================
 
 my ($header_ref, $rows_ref) = read_tsv($input);
 my @header = @$header_ref;
 my @rows   = @$rows_ref;
 my %idx    = header_index(@header);
+
+die "[ERROR] No candidate rows found in input: $input\n" unless @rows;
+
+my $sample_col = $header[0];
+
+die "[ERROR] The first column of input file is empty\n"
+    unless defined $sample_col && $sample_col ne "";
+
+my $file_sample = get_first_column_sample_name(
+    \@rows,
+    $sample_col,
+    \@header,
+    \%idx
+);
+
+$file_sample = sanitize_filename($file_sample);
 
 foreach my $required (qw(Chrom Start End)) {
     die "[ERROR] Required column '$required' not found in input: $input\n"
@@ -158,38 +139,123 @@ if (!$annotate_all) {
         unless exists $idx{Evidence_Level};
 }
 
-open my $out_fh, ">", $out
-    or die "[ERROR] Cannot write output file: $out\n";
+# ============================================================
+# Step 2. Use --out as output anchor
+# ============================================================
 
-my @new_header = (
-    @header,
-    qw(
-        Annotated_Gene
-        Annotated_Transcript
-        Affected_Exons
-        Overlap_Exon_Count
-        Fully_Covered_Exons
-        Partially_Overlapped_Exons
-        Exon_Overlap_Detail
-        Annotation_Status
-    )
+my $out_abs = abs_path(dirname($out));
+if (!defined $out_abs) {
+    $out_abs = resolve_output_dir(dirname($out));
+}
+make_path($out_abs) unless -d $out_abs;
+
+my $safe_level = sanitize_filename($annotate_evidence_level);
+
+my $main_out;
+my $other_out;
+
+if ($annotate_all) {
+    $main_out = "$out_abs/$file_sample.Evidence_Level.All.tsv";
+}
+else {
+    $main_out  = "$out_abs/$file_sample.Evidence_Level.$safe_level.tsv";
+    $other_out = "$out_abs/$file_sample.Evidence_Level.Other.tsv";
+}
+
+print "[INFO] Candidate annotation started\n";
+print "[INFO] Config                    : $config\n";
+print "[INFO] Project root              : $project_root\n";
+print "[INFO] Input candidate file       : $input\n";
+print "[INFO] Sample column             : $sample_col\n";
+print "[INFO] Output file sample prefix : $file_sample\n";
+print "[INFO] Exon TXT                  : $exon_txt\n";
+print "[INFO] Min exon overlap fraction : $min_exon_overlap_fraction\n";
+print "[INFO] Annotate evidence level   : $annotate_evidence_level\n";
+print "[INFO] Annotate all candidates   : $annotate_all\n";
+print "[INFO] --out anchor              : $out\n";
+print "[INFO] Output directory          : $out_abs\n";
+print "[INFO] Main output               : $main_out\n";
+print "[INFO] Other evidence output     : $other_out\n" unless $annotate_all;
+
+# ============================================================
+# Step 3. Read exon annotation
+# ============================================================
+
+my @exons = read_exon_txt($exon_txt);
+
+die "[ERROR] No valid exon records found in REFSEQ_MANE_SELECT_EXON_TXT: $exon_txt\n"
+    unless @exons;
+
+my %exons_by_chr;
+
+foreach my $exon (@exons) {
+    foreach my $key (chrom_keys($exon->{chrom})) {
+        push @{ $exons_by_chr{$key} }, $exon;
+    }
+}
+
+foreach my $chr (keys %exons_by_chr) {
+    @{ $exons_by_chr{$chr} } = sort {
+        $a->{start} <=> $b->{start} ||
+        $a->{end}   <=> $b->{end}
+    } @{ $exons_by_chr{$chr} };
+}
+
+# ============================================================
+# Step 4. Compact output columns
+# ============================================================
+
+my @compact_header = qw(
+    Sample
+    Chrom
+    Start
+    End
+    Region
+    Size_bp
+    Evidence_Level
+    Evidence_Types
+    Evidence_Count
+    Depth_Support
+    Split_Read_Support
+    Discordant_Read_Support
+    Annotated_Gene
+    Annotated_Transcript
+    Affected_Exons
+    Overlap_Exon_Count
+    Fully_Covered_Exons
+    Partially_Overlapped_Exons
+    Annotation_Status
+    Exon_Overlap_Detail
 );
 
-print $out_fh join("\t", @new_header) . "\n";
+open my $main_fh, ">", $main_out
+    or die "[ERROR] Cannot write main output file: $main_out\n";
+
+print $main_fh join("\t", @compact_header) . "\n";
+
+my $other_fh;
+
+if (!$annotate_all) {
+    open $other_fh, ">", $other_out
+        or die "[ERROR] Cannot write other evidence output file: $other_out\n";
+
+    print $other_fh join("\t", @compact_header) . "\n";
+}
 
 my $total_count     = 0;
+my $main_count      = 0;
+my $other_count     = 0;
 my $annotated_count = 0;
 my $not_annotated   = 0;
-my $skipped_count   = 0;
 
 foreach my $row (@rows) {
     $total_count++;
 
     my %r = row_hash($row, \@header, \%idx);
 
-    my $chr   = $r{Chrom};
-    my $start = $r{Start};
-    my $end   = $r{End};
+    my $chr   = get_value(\%r, "Chrom");
+    my $start = get_value(\%r, "Start");
+    my $end   = get_value(\%r, "End");
 
     if (!defined $chr || $chr eq "" || $chr eq "NA") {
         die "[ERROR] Empty Chrom value at candidate row $total_count\n";
@@ -201,30 +267,30 @@ foreach my $row (@rows) {
 
     if ($start > $end) {
         ($start, $end) = ($end, $start);
+        $r{Start} = $start;
+        $r{End}   = $end;
     }
+
+    my $level = get_value(\%r, "Evidence_Level");
 
     my $annotation;
 
-    if (!$annotate_all) {
-        my $level = $r{Evidence_Level};
+    if (!$annotate_all && $level ne $annotate_evidence_level) {
+        $other_count++;
 
-        if (!defined $level || $level ne $annotate_evidence_level) {
-            $skipped_count++;
+        $annotation = {
+            gene                       => "NA",
+            transcript                 => "NA",
+            affected_exons             => "NA",
+            overlap_exon_count         => 0,
+            fully_covered_exons        => "NA",
+            partially_overlapped_exons => "NA",
+            exon_overlap_detail        => "Evidence_Level=$level; main_output_required=$annotate_evidence_level",
+            annotation_status          => "Other_Evidence_Level",
+        };
 
-            $annotation = {
-                gene                       => "NA",
-                transcript                 => "NA",
-                affected_exons             => "NA",
-                overlap_exon_count         => 0,
-                fully_covered_exons        => "NA",
-                partially_overlapped_exons => "NA",
-                exon_overlap_detail        => "Evidence_Level=$level; required=$annotate_evidence_level",
-                annotation_status          => "Skipped_by_evidence_level_filter",
-            };
-
-            print_output_row($out_fh, \@header, \%r, $annotation);
-            next;
-        }
+        print_compact_output_row($other_fh, \%r, $annotation, $sample_col);
+        next;
     }
 
     $annotation = annotate_one_candidate(
@@ -242,17 +308,21 @@ foreach my $row (@rows) {
         $not_annotated++;
     }
 
-    print_output_row($out_fh, \@header, \%r, $annotation);
+    $main_count++;
+    print_compact_output_row($main_fh, \%r, $annotation, $sample_col);
 }
 
-close $out_fh;
+close $main_fh;
+close $other_fh if !$annotate_all;
 
 print "[INFO] Candidate annotation finished\n";
-print "[INFO] Total candidates       : $total_count\n";
-print "[INFO] Skipped candidates     : $skipped_count\n";
-print "[INFO] Annotated candidates   : $annotated_count\n";
-print "[INFO] Not annotated          : $not_annotated\n";
-print "[INFO] Output                 : $out\n";
+print "[INFO] Total candidates        : $total_count\n";
+print "[INFO] Main output candidates  : $main_count\n";
+print "[INFO] Other output candidates : $other_count\n" unless $annotate_all;
+print "[INFO] Annotated candidates    : $annotated_count\n";
+print "[INFO] Not annotated           : $not_annotated\n";
+print "[INFO] Main output             : $main_out\n";
+print "[INFO] Other evidence output   : $other_out\n" unless $annotate_all;
 
 exit 0;
 
@@ -452,28 +522,91 @@ sub read_exon_txt {
 }
 
 # ============================================================
-# Output helper
+# Compact output helper
 # ============================================================
 
-sub print_output_row {
-    my ($fh, $header_ref, $row_hash_ref, $annotation) = @_;
+sub print_compact_output_row {
+    my ($fh, $row_hash_ref, $annotation, $sample_col) = @_;
 
-    my @original_values = map {
-        defined $row_hash_ref->{$_} ? $row_hash_ref->{$_} : "NA"
-    } @$header_ref;
+    my $sample_name = get_value($row_hash_ref, $sample_col);
+    $sample_name = "NA" if !defined $sample_name || $sample_name eq "";
 
-    print $fh join(
-        "\t",
-        @original_values,
+    my $chrom = get_value($row_hash_ref, "Chrom");
+    my $start = get_value($row_hash_ref, "Start");
+    my $end   = get_value($row_hash_ref, "End");
+
+    my $region = first_existing_value(
+        $row_hash_ref,
+        qw(Region Candidate_Region Interval)
+    );
+
+    if ($region eq "NA" && $chrom ne "NA" && $start ne "NA" && $end ne "NA") {
+        $region = "$chrom:$start-$end";
+    }
+
+    my $size_bp = first_existing_value(
+        $row_hash_ref,
+        qw(Size_bp Size Length Length_bp Candidate_Size Candidate_Size_bp Del_Size)
+    );
+
+    if ($size_bp eq "NA" && is_integer($start) && is_integer($end)) {
+        my $s = $start;
+        my $e = $end;
+        ($s, $e) = ($e, $s) if $s > $e;
+        $size_bp = $e - $s + 1;
+    }
+
+    my $evidence_level = get_value($row_hash_ref, "Evidence_Level");
+
+    my $evidence_types = first_existing_value(
+        $row_hash_ref,
+        qw(Evidence_Types Evidence_Type Evidence_Sources Support_Types Support_Type Evidence)
+    );
+
+    my $evidence_count = first_existing_value(
+        $row_hash_ref,
+        qw(Evidence_Count Support_Count Num_Evidence Evidence_Type_Count)
+    );
+
+    my $depth_support = first_existing_value(
+        $row_hash_ref,
+        qw(Depth_Support Has_Depth Depth_Evidence Depth_Candidate Depth)
+    );
+
+    my $split_read_support = first_existing_value(
+        $row_hash_ref,
+        qw(Split_Read_Support Has_Split_Read Split_Evidence Split_Read_Count Split_Reads Split_Read)
+    );
+
+    my $discordant_read_support = first_existing_value(
+        $row_hash_ref,
+        qw(Discordant_Read_Support Has_Discordant_Read Discordant_Evidence Discordant_Read_Count Discordant_Reads Discordant_Pair_Support Discordant_Pair)
+    );
+
+    my @out = (
+        $sample_name,
+        $chrom,
+        $start,
+        $end,
+        $region,
+        $size_bp,
+        $evidence_level,
+        $evidence_types,
+        $evidence_count,
+        $depth_support,
+        $split_read_support,
+        $discordant_read_support,
         $annotation->{gene},
         $annotation->{transcript},
         $annotation->{affected_exons},
         $annotation->{overlap_exon_count},
         $annotation->{fully_covered_exons},
         $annotation->{partially_overlapped_exons},
-        $annotation->{exon_overlap_detail},
         $annotation->{annotation_status},
-    ) . "\n";
+        $annotation->{exon_overlap_detail},
+    );
+
+    print $fh join("\t", @out) . "\n";
 }
 
 # ============================================================
@@ -492,7 +625,7 @@ sub read_tsv {
     chomp $header;
     $header =~ s/\r$//;
 
-    my @header = split /\t/, $header;
+    my @header = split /\t/, $header, -1;
     my @rows;
 
     while (my $line = <$fh>) {
@@ -544,6 +677,70 @@ sub get_field {
     my $i = $idx_ref->{$key};
 
     return defined $fields_ref->[$i] ? $fields_ref->[$i] : "";
+}
+
+sub get_value {
+    my ($row_hash_ref, $key) = @_;
+
+    if (
+        exists $row_hash_ref->{$key}
+        && defined $row_hash_ref->{$key}
+        && $row_hash_ref->{$key} ne ""
+    ) {
+        return $row_hash_ref->{$key};
+    }
+
+    return "NA";
+}
+
+sub first_existing_value {
+    my ($row_hash_ref, @keys) = @_;
+
+    foreach my $key (@keys) {
+        if (
+            exists $row_hash_ref->{$key}
+            && defined $row_hash_ref->{$key}
+            && $row_hash_ref->{$key} ne ""
+        ) {
+            return $row_hash_ref->{$key};
+        }
+    }
+
+    return "NA";
+}
+
+sub get_first_column_sample_name {
+    my ($rows_ref, $sample_col, $header_ref, $idx_ref) = @_;
+
+    die "[ERROR] No candidate rows found in input file\n"
+        unless @$rows_ref;
+
+    my %seen_sample;
+    my $first_sample = "";
+
+    foreach my $row (@$rows_ref) {
+        my %r = row_hash($row, $header_ref, $idx_ref);
+
+        my $s = get_value(\%r, $sample_col);
+
+        next if $s eq "NA" || $s eq "";
+
+        $seen_sample{$s}++;
+
+        if ($first_sample eq "") {
+            $first_sample = $s;
+        }
+    }
+
+    die "[ERROR] Cannot determine sample name from the first column: $sample_col\n"
+        if $first_sample eq "";
+
+    if (scalar(keys %seen_sample) > 1) {
+        print STDERR "[WARN] Multiple sample names found in first column '$sample_col'. ";
+        print STDERR "Output file prefix will use the first sample: $first_sample\n";
+    }
+
+    return $first_sample;
 }
 
 # ============================================================
@@ -642,9 +839,60 @@ sub resolve_path {
     return $p1;
 }
 
+sub resolve_output_dir {
+    my ($dir) = @_;
+
+    die "[ERROR] Empty output directory\n" unless defined $dir && $dir ne "";
+
+    if ($dir =~ /^\//) {
+        return $dir;
+    }
+
+    return getcwd() . "/$dir";
+}
+
+# ============================================================
+# Chromosome helpers
+# ============================================================
+
+sub chrom_keys {
+    my ($chrom) = @_;
+
+    return ("NA") if !defined $chrom || $chrom eq "";
+
+    my @keys;
+    my %seen;
+
+    push @keys, $chrom;
+    $seen{$chrom} = 1;
+
+    if ($chrom =~ /^chr(.+)$/i) {
+        my $no_chr = $1;
+        push @keys, $no_chr unless $seen{$no_chr}++;
+    }
+    else {
+        my $with_chr = "chr$chrom";
+        push @keys, $with_chr unless $seen{$with_chr}++;
+    }
+
+    return @keys;
+}
+
 # ============================================================
 # Misc helpers
 # ============================================================
+
+sub sanitize_filename {
+    my ($x) = @_;
+
+    $x = "NA" if !defined $x || $x eq "";
+
+    $x =~ s/^\s+//;
+    $x =~ s/\s+$//;
+    $x =~ s/[\/\\:\*\?\"\<\>\|\s]+/_/g;
+
+    return $x;
+}
 
 sub choose_most_frequent_key {
     my (%hash) = @_;
@@ -695,12 +943,16 @@ Usage:
   perl bin/annotate_candidates.pl \\
     --config conf/hcm_exondel.example.conf \\
     --input  test_results/SAMPLE/04.candidates/SAMPLE.merged_candidates.tsv \\
-    --out    test_results/SAMPLE/04.candidates/SAMPLE.annotated_candidates.tsv
+    --out    test_results/SAMPLE/06.report/SAMPLE.annotated_candidates.tsv
 
-Required arguments:
-  --config    Config file
-  --input     Candidate TSV file from merge_evidence.pl
-  --out       Annotated output TSV file
+Note:
+  --out is kept for compatibility with the main pipeline.
+  The script uses dirname(--out) as the output directory.
+
+Sample name:
+  The sample name is taken from the first column of the input file.
+  The first data row is used as the output file prefix.
+  The Sample column in output is also taken from the first column of each input row.
 
 Config parameters used:
   REFSEQ_MANE_SELECT_EXON_TXT
@@ -716,26 +968,46 @@ Supported ANNOTATE_EVIDENCE_LEVEL values:
   Low
   All
 
-Default behavior:
-  ANNOTATE_EVIDENCE_LEVEL=High
+Output files:
+  If ANNOTATE_EVIDENCE_LEVEL=High:
+    SAMPLE.Evidence_Level.High.tsv
+    SAMPLE.Evidence_Level.Other.tsv
 
-  This means only rows with Evidence_Level=High are annotated.
-  Other rows are kept in output and marked as:
-  Skipped_by_evidence_level_filter
+  If ANNOTATE_EVIDENCE_LEVEL=Medium:
+    SAMPLE.Evidence_Level.Medium.tsv
+    SAMPLE.Evidence_Level.Other.tsv
 
-If:
-  ANNOTATE_EVIDENCE_LEVEL=All
+  If ANNOTATE_EVIDENCE_LEVEL=Low:
+    SAMPLE.Evidence_Level.Low.tsv
+    SAMPLE.Evidence_Level.Other.tsv
 
-  All candidates are annotated regardless of Evidence_Level.
+  If ANNOTATE_EVIDENCE_LEVEL=All:
+    SAMPLE.Evidence_Level.All.tsv
+
+Compact output columns:
+  Sample
+  Chrom
+  Start
+  End
+  Region
+  Size_bp
+  Evidence_Level
+  Evidence_Types
+  Evidence_Count
+  Depth_Support
+  Split_Read_Support
+  Discordant_Read_Support
+  Annotated_Gene
+  Annotated_Transcript
+  Affected_Exons
+  Overlap_Exon_Count
+  Fully_Covered_Exons
+  Partially_Overlapped_Exons
+  Annotation_Status
+  Exon_Overlap_Detail
 
 Expected exon TXT format:
   Gene    Transcript    Exon    Chrom    Start    End    Strand
-
-Example:
-  perl bin/annotate_candidates.pl \\
-    --config conf/hcm_exondel.example.conf \\
-    --input test/test_results/25B09089386.final.merge/04.candidates/25B09089386.final.merge.merged_candidates.tsv \\
-    --out test/test_results/25B09089386.final.merge/04.candidates/25B09089386.final.merge.annotated_candidates.tsv
 
 USAGE
 }
