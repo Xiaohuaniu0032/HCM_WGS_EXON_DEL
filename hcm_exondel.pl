@@ -37,7 +37,10 @@ use FindBin qw($Bin);
 #   1. Candidate gene BAM extraction is always enabled.
 #   2. No flank is passed to extract_candidate_gene_bam.pl.
 #   3. BAM is extracted strictly by gene coordinates.
-#   4. check_bam.pl is not called at this stage.
+#   4. Candidate-file/Gene-column checks are handled inside
+#      extract_candidate_gene_bam.pl.
+#   5. No shell if/awk candidate judgment is written into run.sh.
+#   6. check_bam.pl is not called at this stage.
 # ============================================================
 
 my $config;
@@ -219,31 +222,6 @@ sub write_sample_shell {
         threads  => $threads,
     );
 
-    print $SH "\n";
-    print $SH "has_candidate_gene() {\n";
-    print $SH "  local f=\"\$1\"\n";
-    print $SH "  if [[ ! -s \"\$f\" ]]; then\n";
-    print $SH "    return 1\n";
-    print $SH "  fi\n";
-    print $SH "  awk -F'\\t' '\n";
-    print $SH "    NR == 1 {\n";
-    print $SH "      for (i = 1; i <= NF; i++) {\n";
-    print $SH "        if (\$i == \"Gene\") g = i\n";
-    print $SH "      }\n";
-    print $SH "      next\n";
-    print $SH "    }\n";
-    print $SH "    g > 0 {\n";
-    print $SH "      v = \$g\n";
-    print $SH "      gsub(/^[ \\t]+|[ \\t]+\$/, \"\", v)\n";
-    print $SH "      if (v != \"\" && v != \".\" && toupper(v) != \"NA\") {\n";
-    print $SH "        found = 1\n";
-    print $SH "        exit\n";
-    print $SH "      }\n";
-    print $SH "    }\n";
-    print $SH "    END { exit(found ? 0 : 1) }\n";
-    print $SH "  ' \"\$f\"\n";
-    print $SH "}\n\n";
-
     my $mkdir_cmd = join(
         " ",
         "mkdir -p",
@@ -272,7 +250,13 @@ sub write_sample_shell {
         "--out",     shell_quote($out_ref->{depth}),
         "--threads", $threads,
     );
-    write_cmd($SH, "Step 1: gene_mean_depth", $cmd, "$dir_ref->{log}/01.gene_mean_depth.log");
+
+    write_cmd(
+        $SH,
+        "Step 1: gene_mean_depth",
+        $cmd,
+        "$dir_ref->{log}/01.gene_mean_depth.log"
+    );
 
     $cmd = join(
         " ",
@@ -283,7 +267,13 @@ sub write_sample_shell {
         "--sample", shell_quote($sample),
         "--out",    shell_quote($out_ref->{split}),
     );
-    write_cmd($SH, "Step 2: split_reads", $cmd, "$dir_ref->{log}/02.split_reads.log");
+
+    write_cmd(
+        $SH,
+        "Step 2: split_reads",
+        $cmd,
+        "$dir_ref->{log}/02.split_reads.log"
+    );
 
     $cmd = join(
         " ",
@@ -294,7 +284,13 @@ sub write_sample_shell {
         "--sample", shell_quote($sample),
         "--out",    shell_quote($out_ref->{discordant}),
     );
-    write_cmd($SH, "Step 3: discordant_reads", $cmd, "$dir_ref->{log}/03.discordant_reads.log");
+
+    write_cmd(
+        $SH,
+        "Step 3: discordant_reads",
+        $cmd,
+        "$dir_ref->{log}/03.discordant_reads.log"
+    );
 
     $cmd = join(
         " ",
@@ -307,12 +303,13 @@ sub write_sample_shell {
         "--discordant", shell_quote($out_ref->{discordant}),
         "--out",        shell_quote($out_ref->{merged}),
     );
-    write_cmd($SH, "Step 4: merge_evidence", $cmd, "$dir_ref->{log}/04.merge_evidence.log");
 
-    print $SH "echo \"[INFO] Step 5: extract_candidate_gene_bam \$(date)\"\n";
-    print $SH "{\n";
-    print $SH "  echo \"[INFO] Step 5: extract_candidate_gene_bam \$(date)\"\n";
-    print $SH "  if has_candidate_gene " . shell_quote($out_ref->{merged}) . "; then\n";
+    write_cmd(
+        $SH,
+        "Step 4: merge_evidence",
+        $cmd,
+        "$dir_ref->{log}/04.merge_evidence.log"
+    );
 
     $cmd = join(
         " ",
@@ -324,11 +321,12 @@ sub write_sample_shell {
         "--outdir",    shell_quote($dir_ref->{gene_bam}),
     );
 
-    print $SH "    $cmd\n";
-    print $SH "  else\n";
-    print $SH "    echo \"[INFO] No valid Gene value found in merged candidates. Skip candidate gene BAM extraction.\"\n";
-    print $SH "  fi\n";
-    print $SH "} > " . shell_quote("$dir_ref->{log}/05.extract_candidate_gene_bam.log") . " 2>&1\n\n";
+    write_cmd(
+        $SH,
+        "Step 5: extract_candidate_gene_bam",
+        $cmd,
+        "$dir_ref->{log}/05.extract_candidate_gene_bam.log"
+    );
 
     $cmd = join(
         " ",
@@ -338,7 +336,13 @@ sub write_sample_shell {
         "--input",  shell_quote($out_ref->{merged}),
         "--out",    shell_quote($out_ref->{annotated}),
     );
-    write_cmd($SH, "Step 6: annotate_candidates", $cmd, "$dir_ref->{log}/06.annotate_candidates.log");
+
+    write_cmd(
+        $SH,
+        "Step 6: annotate_candidates",
+        $cmd,
+        "$dir_ref->{log}/06.annotate_candidates.log"
+    );
 
     if (!$keep_tmp) {
         print $SH "rm -rf " . shell_quote($dir_ref->{tmp}) . "\n\n";
@@ -382,6 +386,7 @@ set -euo pipefail
 #   Enabled by default.
 #   No flank is used.
 #   BAM is extracted strictly by gene coordinates.
+#   Candidate file checking is handled by extract_candidate_gene_bam.pl.
 ############################################################
 
 HEADER
@@ -731,8 +736,8 @@ BAM list format:
   SampleName<TAB>/absolute/path/to/sample.bam
 
 Example:
-  25B09089386<TAB>/ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam
-  25B09089387<TAB>/ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089387.final.merge.bam
+  25B09089386.final.merge<TAB>/ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam
+  25B09089387.final.merge<TAB>/ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089387.final.merge.bam
 
 Workflow:
   1. gene_mean_depth
@@ -747,6 +752,8 @@ Candidate gene BAM extraction:
   No additional config parameter is required.
   No flank is used.
   BAM is extracted strictly according to gene coordinates.
+  Candidate file/Gene-column checks are handled by extract_candidate_gene_bam.pl.
+  No shell if/awk candidate judgment is generated in run.sh.
 
 Output:
   OUTDIR/sample_shell.list
