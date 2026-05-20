@@ -1,5 +1,71 @@
 #!/usr/bin/env perl
 # -*- coding: utf-8 -*-
+#
+# ============================================================
+# Program:
+#   annotate_candidates.pl
+#
+# Purpose:
+#   Annotate candidate exon-level deletion regions using MANE
+#   RefSeq exon annotation and generate compact review-friendly
+#   report files.
+#
+# Main features:
+#   1. Read candidate deletions from merged_candidates.tsv.
+#   2. Read MANE exon annotation from REFSEQ_MANE_SELECT_EXON_TXT
+#      configured in hcm_exondel.example.conf.
+#   3. Annotate candidate regions with affected gene, transcript,
+#      and exon information.
+#   4. Output only key review columns instead of all intermediate
+#      columns.
+#   5. Split output by Evidence_Level:
+#        SAMPLE.Evidence_Level.High.tsv
+#        SAMPLE.Evidence_Level.Other.tsv
+#      The target evidence level is controlled by:
+#        ANNOTATE_EVIDENCE_LEVEL=High
+#   6. Keep --out parameter for compatibility with the main pipeline.
+#      The script uses dirname(--out) as the output directory.
+#   7. Sample name is taken from the first column of the input file.
+#
+# Input:
+#   --config  hcm_exondel config file
+#   --input   merged_candidates.tsv
+#   --out     output anchor file
+#
+# Important:
+#   --out is only used as an output anchor for compatibility.
+#   The actual output filenames are automatically generated as:
+#     SAMPLE.Evidence_Level.<level>.tsv
+#     SAMPLE.Evidence_Level.Other.tsv
+#
+# Required input columns:
+#   First column: sample name
+#   Chrom
+#   Start
+#   End
+#   Evidence_Level
+#
+# Config parameters used:
+#   REFSEQ_MANE_SELECT_EXON_TXT
+#   MIN_EXON_OVERLAP_FRACTION
+#   ANNOTATE_EVIDENCE_LEVEL
+#
+# Expected exon TXT format:
+#   Gene    Transcript    Exon    Chrom    Start    End    Strand
+#
+# Coordinate system:
+#   1-based closed interval
+#
+# Example:
+#   perl bin/annotate_candidates.pl \
+#     --config conf/hcm_exondel.example.conf \
+#     --input  test/test_results/25B09089386/04.candidates/25B09089386.merged_candidates.tsv \
+#     --out    test/test_results/25B09089386/06.report/25B09089386.annotated_candidates.tsv
+#
+# Output example:
+#   test/test_results/25B09089386/06.report/25B09089386.Evidence_Level.High.tsv
+#   test/test_results/25B09089386/06.report/25B09089386.Evidence_Level.Other.tsv
+# ============================================================
 
 use strict;
 use warnings;
@@ -9,31 +75,7 @@ use File::Path qw(make_path);
 use Cwd qw(abs_path getcwd);
 
 # ============================================================
-# annotate_candidates.pl
-#
-# Annotate candidate deletion regions with MANE RefSeq exon
-# annotation and output compact review-friendly TSV files.
-#
-# IMPORTANT:
-#   This script keeps --out for compatibility with the main pipeline.
-#
-#   --out is used as an output anchor.
-#   The real output directory is dirname(--out).
-#
-# Output files:
-#   <sample>.Evidence_Level.High.tsv
-#   <sample>.Evidence_Level.Other.tsv
-#
-# Sample source:
-#   The sample name is taken from the first column of the input file.
-#
-# Config parameters used:
-#   REFSEQ_MANE_SELECT_EXON_TXT
-#   MIN_EXON_OVERLAP_FRACTION
-#   ANNOTATE_EVIDENCE_LEVEL
-#
-# Exon TXT format:
-#   Gene    Transcript    Exon    Chrom    Start    End    Strand
+# Parse command-line arguments
 # ============================================================
 
 my $config;
@@ -60,6 +102,10 @@ $input  = abs_path($input);
 
 die "[ERROR] Config file not found: $config\n" unless defined $config && -s $config;
 die "[ERROR] Input candidate file not found: $input\n" unless defined $input && -s $input;
+
+# ============================================================
+# Read config
+# ============================================================
 
 my %CONF = read_config($config);
 
@@ -104,8 +150,7 @@ if (lc($annotate_evidence_level) eq "all") {
 }
 
 # ============================================================
-# Step 1. Read candidate file first
-#         Sample name is taken from the first column.
+# Step 1. Read candidate file
 # ============================================================
 
 my ($header_ref, $rows_ref) = read_tsv($input);
@@ -140,14 +185,12 @@ if (!$annotate_all) {
 }
 
 # ============================================================
-# Step 2. Use --out as output anchor
+# Step 2. Prepare output files
 # ============================================================
 
-my $out_abs = abs_path(dirname($out));
-if (!defined $out_abs) {
-    $out_abs = resolve_output_dir(dirname($out));
-}
-make_path($out_abs) unless -d $out_abs;
+my $outdir = dirname($out);
+$outdir = resolve_output_dir($outdir);
+make_path($outdir) unless -d $outdir;
 
 my $safe_level = sanitize_filename($annotate_evidence_level);
 
@@ -155,11 +198,11 @@ my $main_out;
 my $other_out;
 
 if ($annotate_all) {
-    $main_out = "$out_abs/$file_sample.Evidence_Level.All.tsv";
+    $main_out = "$outdir/$file_sample.Evidence_Level.All.tsv";
 }
 else {
-    $main_out  = "$out_abs/$file_sample.Evidence_Level.$safe_level.tsv";
-    $other_out = "$out_abs/$file_sample.Evidence_Level.Other.tsv";
+    $main_out  = "$outdir/$file_sample.Evidence_Level.$safe_level.tsv";
+    $other_out = "$outdir/$file_sample.Evidence_Level.Other.tsv";
 }
 
 print "[INFO] Candidate annotation started\n";
@@ -173,12 +216,12 @@ print "[INFO] Min exon overlap fraction : $min_exon_overlap_fraction\n";
 print "[INFO] Annotate evidence level   : $annotate_evidence_level\n";
 print "[INFO] Annotate all candidates   : $annotate_all\n";
 print "[INFO] --out anchor              : $out\n";
-print "[INFO] Output directory          : $out_abs\n";
+print "[INFO] Output directory          : $outdir\n";
 print "[INFO] Main output               : $main_out\n";
 print "[INFO] Other evidence output     : $other_out\n" unless $annotate_all;
 
 # ============================================================
-# Step 3. Read exon annotation
+# Step 3. Read MANE exon annotation
 # ============================================================
 
 my @exons = read_exon_txt($exon_txt);
@@ -202,7 +245,7 @@ foreach my $chr (keys %exons_by_chr) {
 }
 
 # ============================================================
-# Step 4. Compact output columns
+# Step 4. Open output files
 # ============================================================
 
 my @compact_header = qw(
@@ -210,8 +253,9 @@ my @compact_header = qw(
     Chrom
     Start
     End
-    Region
+    Candidate_Region
     Size_bp
+    Scan_Source
     Evidence_Level
     Evidence_Types
     Evidence_Count
@@ -241,6 +285,10 @@ if (!$annotate_all) {
 
     print $other_fh join("\t", @compact_header) . "\n";
 }
+
+# ============================================================
+# Step 5. Annotate candidates
+# ============================================================
 
 my $total_count     = 0;
 my $main_count      = 0;
@@ -465,7 +513,7 @@ sub read_exon_txt {
     chomp $header;
     $header =~ s/\r$//;
 
-    my @header = split /\t/, $header;
+    my @header = split /\t/, $header, -1;
     my %idx    = header_index(@header);
 
     foreach my $required (qw(Gene Transcript Exon Chrom Start End Strand)) {
@@ -535,13 +583,9 @@ sub print_compact_output_row {
     my $start = get_value($row_hash_ref, "Start");
     my $end   = get_value($row_hash_ref, "End");
 
-    my $region = first_existing_value(
-        $row_hash_ref,
-        qw(Region Candidate_Region Interval)
-    );
-
-    if ($region eq "NA" && $chrom ne "NA" && $start ne "NA" && $end ne "NA") {
-        $region = "$chrom:$start-$end";
+    my $candidate_region = "NA";
+    if ($chrom ne "NA" && is_integer($start) && is_integer($end)) {
+        $candidate_region = "$chrom:$start-$end";
     }
 
     my $size_bp = first_existing_value(
@@ -555,6 +599,11 @@ sub print_compact_output_row {
         ($s, $e) = ($e, $s) if $s > $e;
         $size_bp = $e - $s + 1;
     }
+
+    my $scan_source = first_existing_value(
+        $row_hash_ref,
+        qw(Region Scan_Source Candidate_Source Source)
+    );
 
     my $evidence_level = get_value($row_hash_ref, "Evidence_Level");
 
@@ -588,8 +637,9 @@ sub print_compact_output_row {
         $chrom,
         $start,
         $end,
-        $region,
+        $candidate_region,
         $size_bp,
+        $scan_source,
         $evidence_level,
         $evidence_types,
         $evidence_count,
@@ -989,8 +1039,9 @@ Compact output columns:
   Chrom
   Start
   End
-  Region
+  Candidate_Region
   Size_bp
+  Scan_Source
   Evidence_Level
   Evidence_Types
   Evidence_Count
