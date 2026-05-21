@@ -1,4 +1,5 @@
 #!/usr/bin/env perl
+# -*- coding: utf-8 -*-
 
 use strict;
 use warnings;
@@ -36,6 +37,8 @@ use Cwd qw(abs_path);
 #     3. not SECONDARY
 #     4. not SUPPLEMENTARY
 #     5. with SA tag
+#     6. Primary MAPQ >= MIN_MAPQ
+#     7. If EXCLUDE_DUPLICATES=1, duplicate reads are removed
 #
 # SV interval definition:
 #   Primary block = [Primary_Start, Primary_End]
@@ -51,6 +54,14 @@ use Cwd qw(abs_path);
 #     SV_Start  = Left_Block_End + 1
 #     SV_End    = Right_Block_Start - 1
 #     SV_Length = SV_End - SV_Start + 1
+#
+# Config keys used:
+#   SAMTOOLS
+#   MIN_MAPQ
+#   EXCLUDE_DUPLICATES
+#   ANALYZE_CORE_GENES_ONLY
+#   HCM_CORE_GENE_LIST
+#   REFSEQ_MANE_SELECT_GENE_TXT
 #
 # Output:
 #   Compact TSV file for downstream SA split-read clustering.
@@ -78,61 +89,40 @@ if ($help) {
 
 die usage() unless $conf && $bam && $out;
 
-die "[ERROR] Config file not found: $conf\n" unless -s $conf;
-die "[ERROR] BAM file not found: $bam\n" unless -s $bam;
+$conf = abs_path($conf);
+$bam  = abs_path($bam);
+
+die "[ERROR] Config file not found: $conf\n" unless $conf && -s $conf;
+die "[ERROR] BAM file not found: $bam\n" unless $bam && -s $bam;
 
 my $project_root = get_project_root($conf);
 my %cfg = read_conf($conf);
 
-my $samtools = get_conf_value(
-    \%cfg,
-    ["SAMTOOLS", "SAMTOOLS_BIN", "SAMTOOLS_PATH"],
-    "samtools"
-);
+# ------------------------------------------------------------
+# Config parameters
+# ------------------------------------------------------------
 
-my $min_mapq = get_conf_value(
-    \%cfg,
-    ["SPLIT_READ_MIN_MAPQ", "MIN_SPLIT_READ_MAPQ", "MIN_MAPQ"],
-    0
-);
+my $samtools = get_conf_required(\%cfg, "SAMTOOLS");
 
-my $exclude_dup = get_conf_value(
-    \%cfg,
-    ["SPLIT_READ_EXCLUDE_DUP", "EXCLUDE_DUP", "EXCLUDE_DUPLICATE"],
-    0
-);
+my $min_mapq = get_conf_value(\%cfg, "MIN_MAPQ", 20);
+check_non_negative_integer("MIN_MAPQ", $min_mapq);
 
-my $analyze_core_genes_only = get_conf_value(
-    \%cfg,
-    ["ANALYZE_CORE_GENES_ONLY"],
-    0
-);
+my $exclude_dup = get_conf_value(\%cfg, "EXCLUDE_DUPLICATES", 1);
+check_binary_flag("EXCLUDE_DUPLICATES", $exclude_dup);
+
+my $analyze_core_genes_only = get_conf_value(\%cfg, "ANALYZE_CORE_GENES_ONLY", 1);
+check_binary_flag("ANALYZE_CORE_GENES_ONLY", $analyze_core_genes_only);
 
 if (!$sample) {
     $sample = basename($bam);
-    $sample =~ s/\.bam$//;
+    $sample =~ s/\.bam$//i;
 }
 
 my @scan_regions;
 
 if ($analyze_core_genes_only) {
-    my $core_gene_list = get_conf_value(
-        \%cfg,
-        ["HCM_CORE_GENE_LIST"],
-        ""
-    );
-
-    my $gene_txt = get_conf_value(
-        \%cfg,
-        ["REFSEQ_MANE_SELECT_GENE_TXT", "REFSEQ_MANE_GENE_TXT", "GENE_TXT"],
-        ""
-    );
-
-    die "[ERROR] ANALYZE_CORE_GENES_ONLY=1, but HCM_CORE_GENE_LIST is not configured\n"
-        unless $core_gene_list;
-
-    die "[ERROR] ANALYZE_CORE_GENES_ONLY=1, but REFSEQ_MANE_SELECT_GENE_TXT is not configured\n"
-        unless $gene_txt;
+    my $core_gene_list = get_conf_required(\%cfg, "HCM_CORE_GENE_LIST");
+    my $gene_txt       = get_conf_required(\%cfg, "REFSEQ_MANE_SELECT_GENE_TXT");
 
     $core_gene_list = resolve_path($core_gene_list, $project_root);
     $gene_txt       = resolve_path($gene_txt,       $project_root);
@@ -357,12 +347,12 @@ print STDERR "[INFO] Project root            : $project_root\n";
 print STDERR "[INFO] BAM                     : $bam\n";
 print STDERR "[INFO] Output                  : $out\n";
 print STDERR "[INFO] Sample                  : $sample\n";
-print STDERR "[INFO] samtools                : $samtools\n";
+print STDERR "[INFO] SAMTOOLS                : $samtools\n";
+print STDERR "[INFO] MIN_MAPQ                : $min_mapq\n";
+print STDERR "[INFO] EXCLUDE_DUPLICATES      : $exclude_dup\n";
 print STDERR "[INFO] ANALYZE_CORE_GENES_ONLY : $analyze_core_genes_only\n";
 print STDERR "[INFO] Scan mode               : $scan_mode\n";
 print STDERR "[INFO] Scan region number      : " . scalar(@scan_regions) . "\n";
-print STDERR "[INFO] Minimum primary MAPQ    : $min_mapq\n";
-print STDERR "[INFO] Exclude duplicates      : $exclude_dup\n";
 print STDERR "[INFO] Total SAM records       : $total_records\n";
 print STDERR "[INFO] Qualified reads         : $qualified_reads\n";
 print STDERR "[INFO] Qualified SA events     : $qualified_events\n";
@@ -373,6 +363,9 @@ print STDERR "[INFO] Skipped bad CIGAR       : $skipped_bad_cigar\n";
 
 exit 0;
 
+# ============================================================
+# Subroutines
+# ============================================================
 
 sub usage {
     return <<"USAGE";
@@ -392,7 +385,14 @@ Optional:
   --sample STR    Sample ID. Default: BAM basename without .bam
 
 Config keys used:
-  SAMTOOLS / SAMTOOLS_BIN / SAMTOOLS_PATH
+  SAMTOOLS
+
+  MIN_MAPQ
+      Minimum MAPQ for primary alignment.
+
+  EXCLUDE_DUPLICATES
+      1: exclude duplicate reads
+      0: keep duplicate reads
 
   ANALYZE_CORE_GENES_ONLY
       1: scan only genes in HCM_CORE_GENE_LIST
@@ -404,21 +404,15 @@ Config keys used:
   REFSEQ_MANE_SELECT_GENE_TXT
       Required when ANALYZE_CORE_GENES_ONLY=1
 
-  SPLIT_READ_MIN_MAPQ / MIN_SPLIT_READ_MAPQ / MIN_MAPQ
-      Minimum MAPQ for primary alignment.
-
-  SPLIT_READ_EXCLUDE_DUP / EXCLUDE_DUP / EXCLUDE_DUPLICATE
-
 Example:
   perl bin/extract_sa_split_reads.pl \\
       --conf conf/hcm_exondel.example.conf \\
-      --bam test/test_results/25B09089386.final.merge/05.gene_bam/FHOD3.bam \\
-      --out test/test_results/25B09089386.final.merge/05.gene_bam/FHOD3.sa_split_reads.tsv \\
+      --bam test/test_results/25B09089386/05.gene_bam/FHOD3.bam \\
+      --out test/test_results/25B09089386/05.gene_bam/FHOD3.sa_split_reads.tsv \\
       --sample 25B09089386
 
 USAGE
 }
-
 
 sub get_project_root {
     my ($conf_file) = @_;
@@ -433,9 +427,11 @@ sub get_project_root {
     return $dir;
 }
 
-
 sub resolve_path {
     my ($path, $project_root) = @_;
+
+    die "[ERROR] Empty path provided\n"
+        unless defined $path && $path ne "";
 
     return $path if $path =~ m{^/};
 
@@ -444,7 +440,6 @@ sub resolve_path {
 
     return $full;
 }
-
 
 sub read_conf {
     my ($file) = @_;
@@ -484,19 +479,26 @@ sub read_conf {
     return %cfg;
 }
 
+sub get_conf_required {
+    my ($cfg_ref, $key) = @_;
+
+    die "[ERROR] Required config parameter missing: $key\n"
+        unless exists $cfg_ref->{$key}
+            && defined $cfg_ref->{$key}
+            && $cfg_ref->{$key} ne "";
+
+    return $cfg_ref->{$key};
+}
 
 sub get_conf_value {
-    my ($cfg_ref, $keys_ref, $default) = @_;
+    my ($cfg_ref, $key, $default) = @_;
 
-    foreach my $key (@$keys_ref) {
-        if (exists $cfg_ref->{$key} && defined $cfg_ref->{$key} && $cfg_ref->{$key} ne "") {
-            return $cfg_ref->{$key};
-        }
+    if (exists $cfg_ref->{$key} && defined $cfg_ref->{$key} && $cfg_ref->{$key} ne "") {
+        return $cfg_ref->{$key};
     }
 
     return $default;
 }
-
 
 sub load_core_gene_list {
     my ($file) = @_;
@@ -533,7 +535,6 @@ sub load_core_gene_list {
 
     return %genes;
 }
-
 
 sub load_gene_regions {
     my ($file) = @_;
@@ -644,7 +645,6 @@ sub load_gene_regions {
     return %regions;
 }
 
-
 sub find_col_index {
     my ($idx_ref, $keys_ref) = @_;
 
@@ -654,7 +654,6 @@ sub find_col_index {
 
     return undef;
 }
-
 
 sub safe_field {
     my ($arr_ref, $idx) = @_;
@@ -668,7 +667,6 @@ sub safe_field {
 
     return $v eq "" ? "NA" : $v;
 }
-
 
 sub build_samtools_view_cmd {
     my %args = @_;
@@ -690,7 +688,6 @@ sub build_samtools_view_cmd {
     return join(" ", @cmd);
 }
 
-
 sub parse_sa_tag {
     my @fields = @_;
 
@@ -702,7 +699,6 @@ sub parse_sa_tag {
 
     return (0, "NA");
 }
-
 
 sub parse_sa_entries {
     my ($sa_tag) = @_;
@@ -738,7 +734,6 @@ sub parse_sa_entries {
     return @entries;
 }
 
-
 sub cigar_ref_length {
     my ($cigar) = @_;
 
@@ -758,7 +753,6 @@ sub cigar_ref_length {
 
     return $len;
 }
-
 
 sub infer_sv_interval {
     my %args = @_;
@@ -829,42 +823,35 @@ sub infer_sv_interval {
     return %ret;
 }
 
-
 sub is_paired {
     my ($flag) = @_;
     return ($flag & 0x1) ? 1 : 0;
 }
-
 
 sub is_unmapped {
     my ($flag) = @_;
     return ($flag & 0x4) ? 1 : 0;
 }
 
-
 sub is_reverse {
     my ($flag) = @_;
     return ($flag & 0x10) ? 1 : 0;
 }
-
 
 sub is_secondary {
     my ($flag) = @_;
     return ($flag & 0x100) ? 1 : 0;
 }
 
-
 sub is_duplicate {
     my ($flag) = @_;
     return ($flag & 0x400) ? 1 : 0;
 }
 
-
 sub is_supplementary {
     my ($flag) = @_;
     return ($flag & 0x800) ? 1 : 0;
 }
-
 
 sub shell_quote {
     my ($s) = @_;
@@ -873,5 +860,19 @@ sub shell_quote {
 
     $s =~ s/'/'"'"'/g;
     return "'$s'";
+}
+
+sub check_non_negative_integer {
+    my ($name, $value) = @_;
+
+    die "[ERROR] $name must be a non-negative integer\n"
+        unless defined $value && $value =~ /^\d+$/;
+}
+
+sub check_binary_flag {
+    my ($name, $value) = @_;
+
+    die "[ERROR] $name must be 0 or 1\n"
+        unless defined $value && $value =~ /^[01]$/;
 }
 

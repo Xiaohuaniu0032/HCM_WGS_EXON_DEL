@@ -52,8 +52,8 @@ STDERR->autoflush(1);
 #   WINDOW_STEP=500
 #   MIN_WINDOW_SIZE=100
 #   MIN_GENE_MEAN_DEPTH=20
-#   MIN_DEPTH_MAPQ=20
-#   EXCLUDE_DUPLICATES_FOR_DEPTH=1
+#   MIN_MAPQ=20
+#   EXCLUDE_DUPLICATES=1
 #   DEL_DEPTH_RATIO_CUTOFF=0.65
 #   MIN_CONSECUTIVE_DEL_WINDOWS=3
 #   KEEP_GENE_DEPTH_FILE=1
@@ -136,8 +136,11 @@ my $min_window_size = get_conf(\%CONF, "MIN_WINDOW_SIZE", 100);
 
 my $min_gene_mean_depth = get_conf(\%CONF, "MIN_GENE_MEAN_DEPTH", 20);
 
-my $min_depth_mapq = get_conf(\%CONF, "MIN_DEPTH_MAPQ", get_conf(\%CONF, "MIN_MAPQ", 20));
-my $exclude_dup    = get_conf(\%CONF, "EXCLUDE_DUPLICATES_FOR_DEPTH", 1);
+# Unified read-level filters.
+# MIN_MAPQ and EXCLUDE_DUPLICATES are shared by depth,
+# split-read and discordant-read modules.
+my $min_mapq    = get_conf(\%CONF, "MIN_MAPQ", 20);
+my $exclude_dup = get_conf(\%CONF, "EXCLUDE_DUPLICATES", 1);
 
 my $del_depth_ratio_cutoff = get_conf(\%CONF, "DEL_DEPTH_RATIO_CUTOFF", 0.65);
 my $min_consecutive_del_windows = get_conf(\%CONF, "MIN_CONSECUTIVE_DEL_WINDOWS", 3);
@@ -149,8 +152,8 @@ check_positive_integer("WINDOW_SIZE", $window_size);
 check_positive_integer("WINDOW_STEP", $window_step);
 check_positive_integer("MIN_WINDOW_SIZE", $min_window_size);
 check_non_negative_number("MIN_GENE_MEAN_DEPTH", $min_gene_mean_depth);
-check_non_negative_integer("MIN_DEPTH_MAPQ", $min_depth_mapq);
-check_binary_flag("EXCLUDE_DUPLICATES_FOR_DEPTH", $exclude_dup);
+check_non_negative_integer("MIN_MAPQ", $min_mapq);
+check_binary_flag("EXCLUDE_DUPLICATES", $exclude_dup);
 check_numeric_range("DEL_DEPTH_RATIO_CUTOFF", $del_depth_ratio_cutoff, 0, 1);
 check_positive_integer("MIN_CONSECUTIVE_DEL_WINDOWS", $min_consecutive_del_windows);
 check_binary_flag("KEEP_GENE_DEPTH_FILE", $keep_depth_file);
@@ -195,8 +198,8 @@ print "[INFO] WINDOW_SIZE                    : $window_size\n";
 print "[INFO] WINDOW_STEP                    : $window_step\n";
 print "[INFO] MIN_WINDOW_SIZE                : $min_window_size\n";
 print "[INFO] MIN_GENE_MEAN_DEPTH            : $min_gene_mean_depth\n";
-print "[INFO] MIN_DEPTH_MAPQ                 : $min_depth_mapq\n";
-print "[INFO] EXCLUDE_DUPLICATES_FOR_DEPTH   : $exclude_dup\n";
+print "[INFO] MIN_MAPQ                       : $min_mapq\n";
+print "[INFO] EXCLUDE_DUPLICATES             : $exclude_dup\n";
 print "[INFO] DEL_DEPTH_RATIO_CUTOFF         : $del_depth_ratio_cutoff\n";
 print "[INFO] MIN_CONSECUTIVE_DEL_WINDOWS    : $min_consecutive_del_windows\n";
 print "[INFO] KEEP_GENE_DEPTH_FILE           : $keep_depth_file\n";
@@ -282,7 +285,7 @@ foreach my $gene (@genes) {
             bam         => $bam,
             gene        => $gene,
             depth_file  => $depth_file,
-            min_mapq    => $min_depth_mapq,
+            min_mapq    => $min_mapq,
             exclude_dup => $exclude_dup,
         );
 
@@ -1236,8 +1239,8 @@ Window config:
 
 Depth QC config:
   MIN_GENE_MEAN_DEPTH=20
-  MIN_DEPTH_MAPQ=20
-  EXCLUDE_DUPLICATES_FOR_DEPTH=1
+  MIN_MAPQ=20
+  EXCLUDE_DUPLICATES=1
 
 Deletion calling config:
   DEL_DEPTH_RATIO_CUTOFF=0.65
@@ -1262,10 +1265,9 @@ Note:
   If *.gene_depth_files/*.depth.tsv already exists and is non-empty,
   this script will reuse it automatically and skip samtools depth.
 
-  If MIN_DEPTH_MAPQ, EXCLUDE_DUPLICATES_FOR_DEPTH, BAM, or gene coordinates
+  If MIN_MAPQ, EXCLUDE_DUPLICATES, BAM, or gene coordinates
   are changed, please delete the old *.gene_depth_files directory first.
 
 USAGE
 }
-
 
