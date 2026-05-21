@@ -7,6 +7,7 @@ use Getopt::Long;
 use File::Path qw(make_path);
 use Cwd qw(abs_path);
 use FindBin qw($Bin);
+use File::Basename qw(dirname);
 
 # ============================================================
 # HCMExonDel main pipeline
@@ -26,21 +27,33 @@ use FindBin qw($Bin);
 #   OUTDIR/SAMPLE/SAMPLE.run.sh
 #
 # Workflow:
-#   1. gene_mean_depth
-#   2. split_reads
-#   3. discordant_reads
-#   4. merge_evidence
-#   5. extract_candidate_gene_bam
-#   6. annotate_candidates
+#   1. run_gene_mean_depth.pl
+#   2. extract_sa_split_reads.pl
+#   3. cluster_sa_split_reads.pl
+#   4. run_discordant_reads.pl
+#   5. merge_evidence.pl
+#   6. extract_candidate_gene_bam.pl
+#   7. annotate_candidates.pl
+#
+# Output structure:
+#   SAMPLE/
+#   ├── 00.log/
+#   ├── 01.depth/
+#   ├── 02.split_reads/
+#   ├── 03.discordant_reads/
+#   ├── 04.candidates/
+#   ├── 05.gene_bam/
+#   ├── 06.report/
+#   └── tmp/
 #
 # Notes:
-#   1. Candidate gene BAM extraction is always enabled.
-#   2. No flank is passed to extract_candidate_gene_bam.pl.
-#   3. BAM is extracted strictly by gene coordinates.
-#   4. Candidate-file/Gene-column checks are handled inside
-#      extract_candidate_gene_bam.pl.
-#   5. No shell if/awk candidate judgment is written into run.sh.
-#   6. check_bam.pl is not called at this stage.
+#   1. This main script only connects tested bin scripts.
+#   2. It does not change the logic of any bin script.
+#   3. split evidence for merge_evidence.pl uses:
+#        02.split_reads/SAMPLE.split_reads.clusters.tsv
+#   4. Candidate gene BAM extraction is always generated.
+#   5. No flank is passed to extract_candidate_gene_bam.pl.
+#      The extraction script uses its internal default flank = 0.
 # ============================================================
 
 my $config;
@@ -79,18 +92,23 @@ my $keep_tmp = normalize_bool(get_conf(\%CONF, "KEEP_TMP", 0));
 die "[ERROR] THREADS must be a positive integer: $threads\n"
     unless defined $threads && $threads =~ /^\d+$/ && $threads > 0;
 
-my $exon_txt = resolve_path(
-    get_conf(\%CONF, "REFSEQ_MANE_SELECT_EXON_TXT", ""),
-    $Bin
+my $project_root = detect_project_root($config);
+
+my $exon_txt = resolve_config_path(
+    get_conf_required(\%CONF, "REFSEQ_MANE_SELECT_EXON_TXT"),
+    $project_root
 );
 
-my $gene_txt = resolve_path(
-    get_conf(\%CONF, "REFSEQ_MANE_SELECT_GENE_TXT", ""),
-    $Bin
+my $gene_txt = resolve_config_path(
+    get_conf_required(\%CONF, "REFSEQ_MANE_SELECT_GENE_TXT"),
+    $project_root
 );
 
-die "[ERROR] Exon TXT file not found: $exon_txt\n" unless -s $exon_txt;
-die "[ERROR] Gene TXT file not found: $gene_txt\n" unless -s $gene_txt;
+die "[ERROR] REFSEQ_MANE_SELECT_EXON_TXT file not found: $exon_txt\n"
+    unless -s $exon_txt;
+
+die "[ERROR] REFSEQ_MANE_SELECT_GENE_TXT file not found: $gene_txt\n"
+    unless -s $gene_txt;
 
 check_exon_txt_format($exon_txt);
 check_gene_txt_format($gene_txt);
@@ -100,12 +118,13 @@ make_path($outdir) unless -d $outdir;
 $outdir = abs_path($outdir);
 
 my %SCRIPT = (
-    depth      => "$Bin/bin/run_gene_mean_depth.pl",
-    split      => "$Bin/bin/run_split_reads.pl",
-    discordant => "$Bin/bin/run_discordant_reads.pl",
-    merge      => "$Bin/bin/merge_evidence.pl",
-    extract    => "$Bin/bin/extract_candidate_gene_bam.pl",
-    annotate   => "$Bin/bin/annotate_candidates.pl",
+    depth        => "$Bin/bin/run_gene_mean_depth.pl",
+    split_extract => "$Bin/bin/extract_sa_split_reads.pl",
+    split_cluster => "$Bin/bin/cluster_sa_split_reads.pl",
+    discordant   => "$Bin/bin/run_discordant_reads.pl",
+    merge        => "$Bin/bin/merge_evidence.pl",
+    extract_bam  => "$Bin/bin/extract_candidate_gene_bam.pl",
+    annotate     => "$Bin/bin/annotate_candidates.pl",
 );
 
 foreach my $key (sort keys %SCRIPT) {
@@ -122,16 +141,17 @@ open my $LIST, ">", $shell_list or die "[ERROR] Cannot write: $shell_list\n";
 open my $QSUB, ">", $qsub_list  or die "[ERROR] Cannot write: $qsub_list\n";
 
 print_summary(
-    config     => $config,
-    bam_list   => $bam_list,
-    exon_txt   => $exon_txt,
-    gene_txt   => $gene_txt,
-    outdir     => $outdir,
-    threads    => $threads,
-    keep_tmp   => $keep_tmp,
-    sample_num => scalar(@samples),
-    shell_list => $shell_list,
-    qsub_list  => $qsub_list,
+    config       => $config,
+    project_root => $project_root,
+    bam_list     => $bam_list,
+    exon_txt     => $exon_txt,
+    gene_txt     => $gene_txt,
+    outdir       => $outdir,
+    threads      => $threads,
+    keep_tmp     => $keep_tmp,
+    sample_num   => scalar(@samples),
+    shell_list   => $shell_list,
+    qsub_list    => $qsub_list,
 );
 
 foreach my $item (@samples) {
@@ -141,11 +161,15 @@ foreach my $item (@samples) {
     my %DIR = prepare_sample_dirs($outdir, $sample, $force);
 
     my %OUT = (
-        depth      => "$DIR{depth}/$sample.depth_candidates.tsv",
-        split      => "$DIR{split}/$sample.split_reads.tsv",
-        discordant => "$DIR{discordant}/$sample.discordant_reads.tsv",
-        merged     => "$DIR{candidate}/$sample.merged_candidates.tsv",
-        annotated  => "$DIR{report}/$sample.annotated_candidates.tsv",
+        depth          => "$DIR{depth}/$sample.depth_candidates.tsv",
+
+        split_raw      => "$DIR{split}/$sample.split_reads.tsv",
+        split_cluster  => "$DIR{split}/$sample.split_reads.clusters.tsv",
+
+        discordant     => "$DIR{discordant}/$sample.discordant_reads.tsv",
+
+        merged         => "$DIR{candidate}/$sample.merged_candidates.tsv",
+        annotated      => "$DIR{report}/$sample.annotated_candidates.tsv",
     );
 
     my $sample_shell = "$DIR{sample}/$sample.run.sh";
@@ -165,10 +189,20 @@ foreach my $item (@samples) {
         out_ref    => \%OUT,
     );
 
-    chmod 0755, $sample_shell or die "[ERROR] Cannot chmod sample shell: $sample_shell\n";
+    chmod 0755, $sample_shell
+        or die "[ERROR] Cannot chmod sample shell: $sample_shell\n";
 
     print $LIST "$sample_shell\n";
-    print $QSUB "qsub -cwd -l p=$threads,vf=4G -binding linear:$threads -N HCMExonDel_$sample $sample_shell\n";
+
+    print $QSUB join(
+        " ",
+        "qsub",
+        "-cwd",
+        "-l", "p=$threads,vf=4G",
+        "-binding", "linear:$threads",
+        "-N", "HCMExonDel_$sample",
+        shell_quote($sample_shell)
+    ) . "\n";
 
     print "[INFO] Sample shell generated: $sample_shell\n";
 }
@@ -209,7 +243,8 @@ sub write_sample_shell {
     my $dir_ref    = $args{dir_ref};
     my $out_ref    = $args{out_ref};
 
-    open my $SH, ">", $shell or die "[ERROR] Cannot write sample shell: $shell\n";
+    open my $SH, ">", $shell
+        or die "[ERROR] Cannot write sample shell: $shell\n";
 
     write_header(
         fh       => $SH,
@@ -240,6 +275,9 @@ sub write_sample_shell {
 
     my $cmd;
 
+    # ------------------------------------------------------------
+    # Step 1. Depth candidates
+    # ------------------------------------------------------------
     $cmd = join(
         " ",
         shell_quote($perl),
@@ -258,23 +296,48 @@ sub write_sample_shell {
         "$dir_ref->{log}/01.gene_mean_depth.log"
     );
 
+    # ------------------------------------------------------------
+    # Step 2. Extract SA split reads
+    # ------------------------------------------------------------
     $cmd = join(
         " ",
         shell_quote($perl),
-        shell_quote($script_ref->{split}),
-        "--config", shell_quote($config),
+        shell_quote($script_ref->{split_extract}),
+        "--conf",   shell_quote($config),
         "--bam",    shell_quote($bam),
         "--sample", shell_quote($sample),
-        "--out",    shell_quote($out_ref->{split}),
+        "--out",    shell_quote($out_ref->{split_raw}),
     );
 
     write_cmd(
         $SH,
-        "Step 2: split_reads",
+        "Step 2: extract_sa_split_reads",
         $cmd,
-        "$dir_ref->{log}/02.split_reads.log"
+        "$dir_ref->{log}/02.extract_sa_split_reads.log"
     );
 
+    # ------------------------------------------------------------
+    # Step 3. Cluster SA split reads
+    # ------------------------------------------------------------
+    $cmd = join(
+        " ",
+        shell_quote($perl),
+        shell_quote($script_ref->{split_cluster}),
+        "--conf",    shell_quote($config),
+        "--input",   shell_quote($out_ref->{split_raw}),
+        "--outfile", shell_quote($out_ref->{split_cluster}),
+    );
+
+    write_cmd(
+        $SH,
+        "Step 3: cluster_sa_split_reads",
+        $cmd,
+        "$dir_ref->{log}/03.cluster_sa_split_reads.log"
+    );
+
+    # ------------------------------------------------------------
+    # Step 4. Discordant reads
+    # ------------------------------------------------------------
     $cmd = join(
         " ",
         shell_quote($perl),
@@ -287,11 +350,18 @@ sub write_sample_shell {
 
     write_cmd(
         $SH,
-        "Step 3: discordant_reads",
+        "Step 4: discordant_reads",
         $cmd,
-        "$dir_ref->{log}/03.discordant_reads.log"
+        "$dir_ref->{log}/04.discordant_reads.log"
     );
 
+    # ------------------------------------------------------------
+    # Step 5. Merge evidence
+    #
+    # Important:
+    #   --split uses split_reads.clusters.tsv,
+    #   not the raw split_reads.tsv.
+    # ------------------------------------------------------------
     $cmd = join(
         " ",
         shell_quote($perl),
@@ -299,22 +369,28 @@ sub write_sample_shell {
         "--config",     shell_quote($config),
         "--sample",     shell_quote($sample),
         "--depth",      shell_quote($out_ref->{depth}),
-        "--split",      shell_quote($out_ref->{split}),
+        "--split",      shell_quote($out_ref->{split_cluster}),
         "--discordant", shell_quote($out_ref->{discordant}),
         "--out",        shell_quote($out_ref->{merged}),
     );
 
     write_cmd(
         $SH,
-        "Step 4: merge_evidence",
+        "Step 5: merge_evidence",
         $cmd,
-        "$dir_ref->{log}/04.merge_evidence.log"
+        "$dir_ref->{log}/05.merge_evidence.log"
     );
 
+    # ------------------------------------------------------------
+    # Step 6. Extract candidate gene BAM
+    #
+    # No --flank is passed.
+    # extract_candidate_gene_bam.pl internally uses default flank = 0.
+    # ------------------------------------------------------------
     $cmd = join(
         " ",
         shell_quote($perl),
-        shell_quote($script_ref->{extract}),
+        shell_quote($script_ref->{extract_bam}),
         "--config",    shell_quote($config),
         "--candidate", shell_quote($out_ref->{merged}),
         "--bam",       shell_quote($bam),
@@ -323,11 +399,14 @@ sub write_sample_shell {
 
     write_cmd(
         $SH,
-        "Step 5: extract_candidate_gene_bam",
+        "Step 6: extract_candidate_gene_bam",
         $cmd,
-        "$dir_ref->{log}/05.extract_candidate_gene_bam.log"
+        "$dir_ref->{log}/06.extract_candidate_gene_bam.log"
     );
 
+    # ------------------------------------------------------------
+    # Step 7. Annotate candidates
+    # ------------------------------------------------------------
     $cmd = join(
         " ",
         shell_quote($perl),
@@ -339,9 +418,9 @@ sub write_sample_shell {
 
     write_cmd(
         $SH,
-        "Step 6: annotate_candidates",
+        "Step 7: annotate_candidates",
         $cmd,
-        "$dir_ref->{log}/06.annotate_candidates.log"
+        "$dir_ref->{log}/07.annotate_candidates.log"
     );
 
     if (!$keep_tmp) {
@@ -349,9 +428,13 @@ sub write_sample_shell {
     }
 
     print $SH "echo \"[INFO] Finished sample: $sample \$(date)\"\n";
-    print $SH "echo \"[INFO] Merged candidates: $out_ref->{merged}\"\n";
+    print $SH "echo \"[INFO] Depth candidates       : $out_ref->{depth}\"\n";
+    print $SH "echo \"[INFO] Raw split reads        : $out_ref->{split_raw}\"\n";
+    print $SH "echo \"[INFO] Split clusters        : $out_ref->{split_cluster}\"\n";
+    print $SH "echo \"[INFO] Discordant candidates : $out_ref->{discordant}\"\n";
+    print $SH "echo \"[INFO] Merged candidates     : $out_ref->{merged}\"\n";
     print $SH "echo \"[INFO] Candidate gene BAM dir: $dir_ref->{gene_bam}\"\n";
-    print $SH "echo \"[INFO] Annotated candidates: $out_ref->{annotated}\"\n";
+    print $SH "echo \"[INFO] Annotated candidates  : $out_ref->{annotated}\"\n";
 
     close $SH;
 }
@@ -382,11 +465,24 @@ set -euo pipefail
 # Outdir    : $outdir
 # Threads   : $threads
 #
+# Workflow:
+#   1. gene_mean_depth
+#   2. extract_sa_split_reads
+#   3. cluster_sa_split_reads
+#   4. discordant_reads
+#   5. merge_evidence
+#   6. extract_candidate_gene_bam
+#   7. annotate_candidates
+#
+# Important:
+#   merge_evidence.pl uses:
+#     02.split_reads/*.split_reads.clusters.tsv
+#
 # Candidate gene BAM extraction:
 #   Enabled by default.
-#   No flank is used.
+#   No flank is passed.
+#   extract_candidate_gene_bam.pl uses default flank = 0.
 #   BAM is extracted strictly by gene coordinates.
-#   Candidate file checking is handled by extract_candidate_gene_bam.pl.
 ############################################################
 
 HEADER
@@ -426,7 +522,7 @@ sub prepare_sample_dirs {
 
     if (-d $dir{sample} && !$force) {
         die "[ERROR] Sample output directory already exists: $dir{sample}\n"
-          . "        Please use --force to allow existing sample directories\n";
+          . "        Please use --force to allow writing into existing sample directory\n";
     }
 
     foreach my $key (keys %dir) {
@@ -443,7 +539,8 @@ sub read_bam_list {
     my %seen_sample;
     my %seen_bam;
 
-    open my $FH, "<", $file or die "[ERROR] Cannot open BAM list: $file\n";
+    open my $FH, "<", $file
+        or die "[ERROR] Cannot open BAM list: $file\n";
 
     my $line_no = 0;
 
@@ -469,10 +566,10 @@ sub read_bam_list {
         $bam    =~ s/^\s+|\s+$//g;
 
         die "[ERROR] Empty sample name at line $line_no\n"
-          unless defined $sample && $sample ne "";
+            unless defined $sample && $sample ne "";
 
         die "[ERROR] Empty BAM path at line $line_no\n"
-          unless defined $bam && $bam ne "";
+            unless defined $bam && $bam ne "";
 
         die "[ERROR] Invalid sample name at line $line_no: $sample\n"
           . "        Sample name can only contain letters, numbers, dot, underscore and hyphen.\n"
@@ -495,11 +592,11 @@ sub read_bam_list {
         check_bam_index($abs_bam);
 
         die "[ERROR] Duplicated sample name detected at line $line_no: $sample\n"
-          if exists $seen_sample{$sample};
+            if exists $seen_sample{$sample};
 
         die "[ERROR] Duplicated BAM path detected at line $line_no:\n"
           . "        $abs_bam\n"
-          if exists $seen_bam{$abs_bam};
+            if exists $seen_bam{$abs_bam};
 
         $seen_sample{$sample} = 1;
         $seen_bam{$abs_bam}   = 1;
@@ -538,7 +635,8 @@ sub read_config {
 
     my %conf;
 
-    open my $FH, "<", $file or die "[ERROR] Cannot open config file: $file\n";
+    open my $FH, "<", $file
+        or die "[ERROR] Cannot open config file: $file\n";
 
     while (my $line = <$FH>) {
         chomp $line;
@@ -547,11 +645,12 @@ sub read_config {
         next if $line =~ /^\s*$/;
         next if $line =~ /^\s*#/;
 
+        $line =~ s/\s+#.*$//;
+
         if ($line =~ /^\s*([^=\s]+)\s*=\s*(.*?)\s*$/) {
             my $key = $1;
             my $val = $2;
 
-            $val =~ s/\s+#.*$//;
             $val =~ s/^\s+|\s+$//g;
             $val =~ s/^['"]//;
             $val =~ s/['"]$//;
@@ -579,6 +678,17 @@ sub get_conf {
     return $default;
 }
 
+sub get_conf_required {
+    my ($conf_ref, $key) = @_;
+
+    die "[ERROR] Required config parameter missing: $key\n"
+        unless exists $conf_ref->{$key}
+        && defined $conf_ref->{$key}
+        && $conf_ref->{$key} ne "";
+
+    return $conf_ref->{$key};
+}
+
 sub normalize_bool {
     my ($v) = @_;
 
@@ -592,18 +702,31 @@ sub normalize_bool {
     return $v ? 1 : 0;
 }
 
-sub resolve_path {
-    my ($path, $base_dir) = @_;
+sub detect_project_root {
+    my ($config_path) = @_;
 
-    die "[ERROR] Empty path provided\n" unless defined $path && $path ne "";
+    my $config_dir = dirname($config_path);
 
-    if ($path =~ /^\//) {
+    if ($config_dir =~ m{/conf$}) {
+        return abs_path(dirname($config_dir));
+    }
+
+    return abs_path($config_dir);
+}
+
+sub resolve_config_path {
+    my ($path, $project_root) = @_;
+
+    die "[ERROR] Empty path provided\n"
+        unless defined $path && $path ne "";
+
+    if ($path =~ m{^/}) {
         my $abs = abs_path($path);
         die "[ERROR] Path not found: $path\n" unless defined $abs;
         return $abs;
     }
 
-    my $full = "$base_dir/$path";
+    my $full = "$project_root/$path";
     my $abs  = abs_path($full);
 
     die "[ERROR] Path not found: $full\n" unless defined $abs;
@@ -622,13 +745,14 @@ sub shell_quote {
 }
 
 # ============================================================
-# Format checks
+# Checks
 # ============================================================
 
 sub check_script {
     my ($script) = @_;
 
-    die "[ERROR] Required script not found: $script\n" unless -s $script;
+    die "[ERROR] Required script not found: $script\n"
+        unless -s $script;
 
     return 1;
 }
@@ -636,7 +760,8 @@ sub check_script {
 sub check_exon_txt_format {
     my ($file) = @_;
 
-    open my $FH, "<", $file or die "[ERROR] Cannot open exon TXT: $file\n";
+    open my $FH, "<", $file
+        or die "[ERROR] Cannot open exon TXT: $file\n";
 
     my $header = <$FH>;
     close $FH;
@@ -651,7 +776,7 @@ sub check_exon_txt_format {
 
     foreach my $col (qw(Gene Transcript Exon Chrom Start End Strand)) {
         die "[ERROR] Exon TXT missing required column '$col': $file\n"
-          unless exists $h{$col};
+            unless exists $h{$col};
     }
 
     return 1;
@@ -660,7 +785,8 @@ sub check_exon_txt_format {
 sub check_gene_txt_format {
     my ($file) = @_;
 
-    open my $FH, "<", $file or die "[ERROR] Cannot open gene TXT: $file\n";
+    open my $FH, "<", $file
+        or die "[ERROR] Cannot open gene TXT: $file\n";
 
     my $header = <$FH>;
     close $FH;
@@ -675,7 +801,7 @@ sub check_gene_txt_format {
 
     foreach my $col (qw(Gene Transcript Chrom Start End Strand ExonCount)) {
         die "[ERROR] Gene TXT missing required column '$col': $file\n"
-          unless exists $h{$col};
+            unless exists $h{$col};
     }
 
     return 1;
@@ -692,19 +818,22 @@ sub print_summary {
     print "============================================================\n";
     print " HCMExonDel sample shell generation\n";
     print "============================================================\n";
-    print "Config file            : $args{config}\n";
-    print "BAM list               : $args{bam_list}\n";
-    print "BAM list format        : SampleName<TAB>/absolute/path/to/sample.bam\n";
-    print "Exon TXT               : $args{exon_txt}\n";
-    print "Gene TXT               : $args{gene_txt}\n";
-    print "Outdir                 : $args{outdir}\n";
-    print "Threads                : $args{threads}\n";
-    print "Keep tmp               : $args{keep_tmp}\n";
-    print "Candidate gene BAM     : enabled\n";
-    print "Candidate BAM flank    : 0, strict gene coordinates\n";
-    print "Samples                : $args{sample_num}\n";
-    print "Shell list             : $args{shell_list}\n";
-    print "Qsub list              : $args{qsub_list}\n";
+    print "Config file              : $args{config}\n";
+    print "Project root             : $args{project_root}\n";
+    print "BAM list                 : $args{bam_list}\n";
+    print "BAM list format          : SampleName<TAB>/absolute/path/to/sample.bam\n";
+    print "Exon TXT                 : $args{exon_txt}\n";
+    print "Gene TXT                 : $args{gene_txt}\n";
+    print "Outdir                   : $args{outdir}\n";
+    print "Threads                  : $args{threads}\n";
+    print "Keep tmp                 : $args{keep_tmp}\n";
+    print "Samples                  : $args{sample_num}\n";
+    print "Shell list               : $args{shell_list}\n";
+    print "Qsub list                : $args{qsub_list}\n";
+    print "Workflow                 : depth -> SA split -> SA cluster -> discordant -> merge -> gene BAM -> annotate\n";
+    print "Split input for merge    : *.split_reads.clusters.tsv\n";
+    print "Candidate gene BAM       : enabled\n";
+    print "Candidate gene BAM flank : default 0, strict gene coordinates\n";
     print "============================================================\n\n";
 }
 
@@ -725,35 +854,48 @@ Required arguments:
 
 Optional arguments:
   --outdir      Output directory. [default: results]
-  --force       Overwrite existing sample directories.
+  --force       Allow writing into existing sample directories.
   --help        Show this help message.
 
-Required config keys:
+Required config keys checked by hcm_exondel.pl:
   REFSEQ_MANE_SELECT_EXON_TXT
   REFSEQ_MANE_SELECT_GENE_TXT
+
+Other config keys are checked by each bin script itself, for example:
+  PERL
+  THREADS
+  SAMTOOLS
+  HCM_CORE_GENE_LIST
+  ANALYZE_CORE_GENES_ONLY
+  TARGET_REGION_FLANK
+  WINDOW_SIZE
+  WINDOW_STEP
+  DEPTH_RATIO_CUTOFF
+  MIN_CANDIDATE_WINDOWS
+  MIN_MAPQ
+  MIN_DISCORDANT_READS
+  DISCORDANT_CLUSTER_DISTANCE
+  SA_SPLIT_CLUSTER_WINDOW
+  SA_SPLIT_MIN_SUPPORT_READS
+  EVIDENCE_MERGE_DISTANCE
+  MIN_EVIDENCE_COUNT
+  MIN_EXON_OVERLAP_FRACTION
+  KEEP_TMP
 
 BAM list format:
   SampleName<TAB>/absolute/path/to/sample.bam
 
 Example:
-  25B09089386.final.merge<TAB>/ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam
-  25B09089387.final.merge<TAB>/ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089387.final.merge.bam
+  25B09089386<TAB>/ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam
 
 Workflow:
-  1. gene_mean_depth
-  2. split_reads
-  3. discordant_reads
-  4. merge_evidence
-  5. extract_candidate_gene_bam
-  6. annotate_candidates
-
-Candidate gene BAM extraction:
-  Enabled by default.
-  No additional config parameter is required.
-  No flank is used.
-  BAM is extracted strictly according to gene coordinates.
-  Candidate file/Gene-column checks are handled by extract_candidate_gene_bam.pl.
-  No shell if/awk candidate judgment is generated in run.sh.
+  1. run_gene_mean_depth.pl
+  2. extract_sa_split_reads.pl
+  3. cluster_sa_split_reads.pl
+  4. run_discordant_reads.pl
+  5. merge_evidence.pl
+  6. extract_candidate_gene_bam.pl
+  7. annotate_candidates.pl
 
 Output:
   OUTDIR/sample_shell.list
@@ -767,12 +909,38 @@ Output structure:
   └── SAMPLE/
       ├── 00.log/
       ├── 01.depth/
+      │   ├── SAMPLE.depth_candidates.tsv
+      │   ├── SAMPLE.depth_candidates.all_window_ratio.tsv
+      │   ├── SAMPLE.depth_candidates.del_windows.tsv
+      │   ├── SAMPLE.depth_candidates.gene_mean_depth.tsv
+      │   └── SAMPLE.depth_candidates.window_depth.tsv
       ├── 02.split_reads/
+      │   ├── SAMPLE.split_reads.tsv
+      │   ├── SAMPLE.split_reads.clusters.tsv
+      │   ├── SAMPLE.split_reads.failed_clusters.tsv
+      │   └── SAMPLE.split_reads.supporting_reads.tsv
       ├── 03.discordant_reads/
+      │   ├── SAMPLE.discordant_reads.tsv
+      │   ├── SAMPLE.discordant_reads.raw_discordant_pairs.tsv
+      │   ├── SAMPLE.discordant_reads.supporting_pairs.tsv
+      │   └── SAMPLE.discordant_reads.discarded_clusters.tsv
       ├── 04.candidates/
+      │   ├── SAMPLE.merged_candidates.tsv
+      │   └── SAMPLE.merged_candidates.tsv.all.tsv
       ├── 05.gene_bam/
+      │   ├── GENE.bam
+      │   └── GENE.bam.bai
       ├── 06.report/
+      │   └── SAMPLE.annotated_candidates.tsv
       └── tmp/
+
+Important:
+  merge_evidence.pl uses:
+    --split 02.split_reads/SAMPLE.split_reads.clusters.tsv
+
+  extract_candidate_gene_bam.pl is always generated.
+  No --flank is passed, so it uses its own default flank = 0.
+
 USAGE
 }
 
