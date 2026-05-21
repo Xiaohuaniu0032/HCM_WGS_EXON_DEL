@@ -1,0 +1,4 @@
+perl /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/bin/extract_sa_split_reads.pl --conf /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/conf/hcm_exondel.example.conf --bam /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam --sample 25B09089386 --out /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/02.split_reads/25B09089386.split_reads.tsv
+
+perl /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/bin/cluster_sa_split_reads.pl --conf /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/conf/hcm_exondel.example.conf --input /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/02.split_reads/25B09089386.split_reads.tsv --outfile /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/02.split_reads/25B09089386.split_reads.clusters.tsv
+
