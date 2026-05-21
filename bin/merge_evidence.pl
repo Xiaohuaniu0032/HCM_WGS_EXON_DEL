@@ -1,747 +1,304 @@
-#!/usr/bin/env perl
-# -*- coding: utf-8 -*-
-
 use strict;
 use warnings;
-use Getopt::Long;
+use Getopt::Long qw(GetOptions);
 use File::Basename qw(dirname);
-use File::Path qw(make_path);
-use Cwd qw(abs_path);
 
-# ============================================================
 # merge_evidence.pl
 #
-# Merge evidence from:
-#   1. depth reduction
-#   2. discordant read pairs
-#   3. split / soft-clipped reads
+# Purpose:
+#   Merge exon-level deletion evidence from three independent modules:
 #
-# Main logic:
-#   - Merge records by chromosome and genomic proximity.
-#   - Evidence records are merged if:
-#       record.start <= current_cluster.end + EVIDENCE_MERGE_DISTANCE
-#   - Candidate must be supported by at least two evidence types.
+#     1) Depth evidence
+#        Input: depth_candidates.tsv
+#        Meaning: continuous low-depth windows suggesting deletion.
+#        Limitation: boundary is affected by window size and is usually rough.
 #
-# Config:
-#   EVIDENCE_MERGE_DISTANCE=1000
-#   MIN_EVIDENCE_COUNT=2
-# ============================================================
+#     2) Split-read evidence
+#        Input: split_reads.clusters.tsv
+#        Meaning: split reads / SA-tag reads supporting breakpoint-spanning events.
+#        Strength: usually closest to the real breakpoint.
+#
+#     3) Discordant-read evidence
+#        Input: discordant_reads.tsv
+#        Meaning: read pairs with abnormal insert size / orientation.
+#        Strength: supports deletion-like SV, but breakpoint is usually less precise
+#                  than split-read evidence.
+#
+# Main merging logic:
+#
+#   For each Gene + Chrom group:
+#
+#     Step 1. Convert all evidence intervals into position-level support events.
+#             This is implemented by interval event scanning, not by expanding
+#             every single base.
+#
+#     Step 2. For each continuous genomic segment, count whether it is supported by:
+#
+#               Depth
+#               Split
+#               Discordant
+#
+#             Evidence_Count = number of supporting evidence types.
+#
+#     Step 3. The main output keeps only regions with:
+#
+#               Evidence_Count == 3
+#
+#             That means the final main candidates are supported by:
+#
+#               Depth + Split + Discordant
+#
+#     Step 4. An auxiliary file <out>.all.tsv is also written.
+#             It keeps all regions with Evidence_Count >= 1 for debugging.
+#
+#
+# Coordinate definitions:
+#
+#   This script outputs three coordinate systems:
+#
+#   1) Merged_Start / Merged_End
+#
+#      Definition:
+#        The outer boundary of all evidence intervals overlapping this segment.
+#
+#      Calculation:
+#        Merged_Start = minimum start among overlapping evidence records
+#        Merged_End   = maximum end among overlapping evidence records
+#
+#      Meaning:
+#        The widest possible event range supported by any evidence.
+#        This is useful for checking the complete evidence span, but it may be
+#        wider than the true deletion boundary.
+#
+#
+#   2) Core_Start / Core_End
+#
+#      Definition:
+#        The position-level segment currently supported by the listed evidence types.
+#
+#      For three-evidence candidates, this is the intersection of:
+#
+#        Depth interval
+#        Split interval
+#        Discordant interval
+#
+#      Meaning:
+#        The most conservative region jointly supported by all available evidence.
+#        It is useful as a high-confidence core region, but it may be shorter than
+#        the real deletion, because depth windows are often shorter or coarser.
+#
+#
+#   3) Best_Start / Best_End
+#
+#      Definition:
+#        The recommended candidate boundary for downstream annotation and reporting.
+#
+#      Priority:
+#
+#        Split > Discordant > Depth
+#
+#      Rationale:
+#        Split-read clusters are usually closest to the real breakpoint.
+#        Discordant-read clusters are the second choice.
+#        Depth intervals are used only when no breakpoint-level evidence exists.
+#
+#      For example:
+#
+#        Depth      chr18:34232176-34241175
+#        Split      chr18:34232240-34241309
+#        Discordant chr18:34232175-34241310
+#
+#        Merged     chr18:34232175-34241310
+#        Core       chr18:34232240-34241175
+#        Best       chr18:34232240-34241309   derived from Split
+#
+#
+# Input requirements:
+#
+#   --depth:
+#     depth_candidates.tsv
+#     Required columns:
+#       SampleID Gene Chrom Start End
+#
+#   --split:
+#     split_reads.clusters.tsv only
+#     Required columns:
+#       Sample Cluster_ID SV_Chrom Cluster_Start Cluster_End
+#
+#   --discordant:
+#     discordant_reads.tsv
+#     Required columns:
+#       SampleID Cluster_ID Chrom Start End
+#
+# Output:
+#
+#   --out:
+#     Main result. Only three-evidence candidates.
+#
+#   <out>.all.tsv:
+#     Auxiliary result. All evidence-supported segments.
+#
+# Coordinates:
+#   All coordinates are treated as 1-based closed intervals.
 
-my $config;
-my $sample;
-my $depth_file;
-my $discordant_file;
-my $split_file;
-my $out;
-my $help = 0;
+my %opt;
 
 GetOptions(
-    "config=s"     => \$config,
-    "sample=s"     => \$sample,
-    "depth=s"      => \$depth_file,
-    "discordant=s" => \$discordant_file,
-    "split=s"      => \$split_file,
-    "out=s"        => \$out,
-    "help"         => \$help,
+    'config=s'     => \$opt{config},
+    'sample=s'     => \$opt{sample},
+    'depth=s'      => \$opt{depth},
+    'split=s'      => \$opt{split},
+    'discordant=s' => \$opt{discordant},
+    'out=s'        => \$opt{out},
+    'help'         => \$opt{help},
 ) or die usage();
 
-if ($help) {
+if ($opt{help}) {
     print usage();
     exit 0;
 }
 
-die usage() unless $config && $sample && $depth_file && $discordant_file && $split_file && $out;
-
-$config = safe_abs_path($config);
-die "[ERROR] Config file not found or empty: $config\n" unless defined $config && -s $config;
-
-$depth_file      = safe_abs_path($depth_file);
-$discordant_file = safe_abs_path($discordant_file);
-$split_file      = safe_abs_path($split_file);
-
-my %CONF = read_config($config);
-
-my $merge_distance = get_conf_value(\%CONF, "EVIDENCE_MERGE_DISTANCE", 1000);
-my $min_evidence_count = get_conf_value(\%CONF, "MIN_EVIDENCE_COUNT", 2);
-
-die "[ERROR] EVIDENCE_MERGE_DISTANCE must be a non-negative integer. Current value: $merge_distance\n"
-    unless defined $merge_distance && $merge_distance =~ /^\d+$/;
-
-die "[ERROR] MIN_EVIDENCE_COUNT must be 2 or 3. Current value: $min_evidence_count\n"
-    unless defined $min_evidence_count
-        && $min_evidence_count =~ /^\d+$/
-        && $min_evidence_count >= 2
-        && $min_evidence_count <= 3;
-
-my $outdir = dirname($out);
-make_path($outdir) unless -d $outdir;
-
-print "[INFO] Merge evidence started\n";
-print "[INFO] Sample             : $sample\n";
-print "[INFO] Config             : $config\n";
-print "[INFO] Depth file         : " . defined_or_na($depth_file) . "\n";
-print "[INFO] Discordant file    : " . defined_or_na($discordant_file) . "\n";
-print "[INFO] Split file         : " . defined_or_na($split_file) . "\n";
-print "[INFO] Merge distance     : $merge_distance\n";
-print "[INFO] Min evidence count : $min_evidence_count\n";
-
-# ============================================================
-# Step 1. Read evidence files
-# ============================================================
-
-my @depth_records = ();
-my @discordant_records = ();
-my @split_records = ();
-
-if (file_has_content($depth_file)) {
-    @depth_records = read_depth_evidence($depth_file);
-} else {
-    warn "[WARN] Depth evidence file missing or empty: " . defined_or_na($depth_file) . "\n";
+for my $k (qw/config sample depth split discordant out/) {
+    die "[ERROR] Missing required option --$k\n" . usage()
+        unless defined $opt{$k} && $opt{$k} ne '';
 }
 
-if (file_has_content($discordant_file)) {
-    @discordant_records = read_discordant_evidence($discordant_file);
-} else {
-    warn "[WARN] Discordant evidence file missing or empty: " . defined_or_na($discordant_file) . "\n";
+die "[ERROR] Config file not found: $opt{config}\n"         unless -s $opt{config};
+die "[ERROR] Depth file not found: $opt{depth}\n"           unless -s $opt{depth};
+die "[ERROR] Split cluster file not found: $opt{split}\n"   unless -s $opt{split};
+die "[ERROR] Discordant file not found: $opt{discordant}\n" unless -s $opt{discordant};
+
+if ($opt{split} =~ /split_reads\.tsv$/ && $opt{split} !~ /clusters/) {
+    die "[ERROR] Wrong split input file: $opt{split}\n"
+      . "        merge_evidence.pl requires split_reads.clusters.tsv, not split_reads.tsv\n";
 }
 
-if (file_has_content($split_file)) {
-    @split_records = read_split_evidence($split_file);
-} else {
-    warn "[WARN] Split evidence file missing or empty: " . defined_or_na($split_file) . "\n";
+my $all_out = $opt{out} . '.all.tsv';
+
+log_msg("Merge evidence started");
+log_msg("Config          : $opt{config}");
+log_msg("Sample          : $opt{sample}");
+log_msg("Depth file      : $opt{depth}");
+log_msg("Split file      : $opt{split}");
+log_msg("Discordant file : $opt{discordant}");
+log_msg("Main output     : $opt{out}");
+log_msg("All output      : $all_out");
+
+my @records;
+
+push @records, read_depth_records($opt{depth}, $opt{sample});
+push @records, read_split_cluster_records($opt{split}, $opt{sample});
+push @records, read_discordant_records($opt{discordant}, $opt{sample});
+
+die "[ERROR] No evidence records loaded from input files\n" unless @records;
+
+log_msg("Total evidence records loaded: " . scalar(@records));
+
+my %groups;
+
+for my $r (@records) {
+    my $gene  = normalize_value($r->{Gene});
+    my $chrom = normalize_value($r->{Chrom});
+
+    next if $gene eq 'NA' || $chrom eq 'NA';
+
+    my $key = join("\t", $gene, $chrom);
+    push @{ $groups{$key} }, $r;
 }
 
-my @all_records = (
-    @depth_records,
-    @discordant_records,
-    @split_records,
-);
+my @all_candidates;
 
-# ============================================================
-# Step 2. Open output and print header
-# ============================================================
+for my $key (sort keys %groups) {
+    my ($gene, $chrom) = split /\t/, $key;
 
-open my $out_fh, ">", $out or die "[ERROR] Cannot write output file: $out\n";
+    my @segments = build_position_support_segments(
+        $gene,
+        $chrom,
+        $groups{$key}
+    );
 
-print $out_fh join("\t", qw(
-    SampleID
-    Gene
-    Transcript
-    Region
-    Chrom
-    Start
-    End
-    Candidate_Length
-    Evidence_Count
-    Evidence_Types
-    Evidence_Level
-    Depth_Evidence
-    Discordant_Evidence
-    Split_Evidence
-    Depth_Status
-    Region_Mean_Depth
-    Candidate_Mean_Depth
-    Mean_Depth_Ratio
-    Min_Mean_Depth_Ratio
-    Max_Mean_Depth_Ratio
-    Discordant_Reads
-    Median_Insert_Size
-    Split_Reads
-    Left_Softclip_Reads
-    Right_Softclip_Reads
-    SA_Tag_Reads
-    Depth_Record_Count
-    Discordant_Record_Count
-    Split_Record_Count
-    Source_Record_Count
-    Source_Records
-    Source_Targets
-    All_Genes
-    All_Transcripts
-    All_Regions
-    Candidate_Status
-    Comment
-)) . "\n";
-
-if (!@all_records) {
-    close $out_fh;
-    print "[INFO] No evidence records found. Empty report generated: $out\n";
-    exit 0;
+    push @all_candidates, @segments;
 }
 
-# ============================================================
-# Step 3. Cluster evidence records
-# ============================================================
+@all_candidates = sort {
+       chrom_cmp($a->{Chrom}, $b->{Chrom})
+    || $a->{Core_Start} <=> $b->{Core_Start}
+    || $a->{Core_End}   <=> $b->{Core_End}
+    || $a->{Gene} cmp $b->{Gene}
+} @all_candidates;
 
-my @clusters = cluster_evidence_records(
-    records        => \@all_records,
-    merge_distance => $merge_distance,
-);
+my @main_candidates = grep {
+    $_->{Evidence_Count} == 3
+} @all_candidates;
 
-# ============================================================
-# Step 4. Build final candidates
-# ============================================================
+write_candidates($all_out, \@all_candidates);
+write_candidates($opt{out}, \@main_candidates);
 
-my $pass_count = 0;
-
-foreach my $cluster (@clusters) {
-    my $candidate = build_final_candidate($cluster);
-
-    next if $candidate->{evidence_count} < $min_evidence_count;
-
-    $pass_count++;
-
-    print $out_fh join("\t",
-        $sample,
-        $candidate->{gene},
-        $candidate->{transcript},
-        $candidate->{region},
-        $candidate->{chr},
-        $candidate->{start},
-        $candidate->{end},
-        $candidate->{candidate_length},
-        $candidate->{evidence_count},
-        $candidate->{evidence_types},
-        $candidate->{evidence_level},
-        $candidate->{has_depth} ? "Yes" : "No",
-        $candidate->{has_discordant} ? "Yes" : "No",
-        $candidate->{has_split} ? "Yes" : "No",
-        $candidate->{depth_status},
-        $candidate->{region_mean_depth},
-        $candidate->{candidate_mean_depth},
-        $candidate->{mean_depth_ratio},
-        $candidate->{min_mean_depth_ratio},
-        $candidate->{max_mean_depth_ratio},
-        $candidate->{discordant_reads},
-        $candidate->{median_insert_size},
-        $candidate->{split_reads},
-        $candidate->{left_softclip_reads},
-        $candidate->{right_softclip_reads},
-        $candidate->{sa_tag_reads},
-        $candidate->{depth_record_count},
-        $candidate->{discordant_record_count},
-        $candidate->{split_record_count},
-        $candidate->{source_record_count},
-        $candidate->{source_records},
-        $candidate->{source_targets},
-        $candidate->{all_genes},
-        $candidate->{all_transcripts},
-        $candidate->{all_regions},
-        $candidate->{candidate_status},
-        $candidate->{comment},
-    ) . "\n";
-}
-
-close $out_fh;
-
-print "[INFO] Merge evidence finished\n";
-print "[INFO] Depth records      : " . scalar(@depth_records) . "\n";
-print "[INFO] Discordant records : " . scalar(@discordant_records) . "\n";
-print "[INFO] Split records      : " . scalar(@split_records) . "\n";
-print "[INFO] Evidence clusters  : " . scalar(@clusters) . "\n";
-print "[INFO] Passed candidates  : $pass_count\n";
-print "[INFO] Final report       : $out\n";
+log_msg("All evidence regions written       : " . scalar(@all_candidates));
+log_msg("Three-evidence candidates written  : " . scalar(@main_candidates));
+log_msg("Merge evidence finished");
 
 exit 0;
 
-# ============================================================
-# Read depth evidence
-# ============================================================
 
-sub read_depth_evidence {
+sub usage {
+    return <<'USAGE';
+
+Usage:
+  perl merge_evidence.pl \
+    --config conf/hcm_exondel.example.conf \
+    --sample 25B09089386 \
+    --depth 01.depth/25B09089386.depth_candidates.tsv \
+    --split 02.split_reads/25B09089386.split_reads.clusters.tsv \
+    --discordant 03.discordant_reads/25B09089386.discordant_reads.tsv \
+    --out 04.candidates/25B09089386.merged_candidates.tsv
+
+Required:
+  --config       Config file. Required for compatibility with main pipeline.
+  --sample       Sample ID.
+  --depth        Depth candidate file.
+  --split        Split-read cluster file. Only split_reads.clusters.tsv is supported.
+  --discordant   Discordant-read candidate file.
+  --out          Main output file.
+
+Output:
+  --out          Main output. Only Depth + Split + Discordant regions.
+  <out>.all.tsv  Auxiliary output. All evidence-supported regions.
+
+Coordinate meaning:
+  Merged_*       Outer boundary of overlapping evidence intervals.
+  Core_*         Conservative position-level evidence-overlap region.
+  Best_*         Recommended boundary for annotation/reporting.
+                 Priority: Split > Discordant > Depth.
+
+Notes:
+  Coordinates are treated as 1-based closed intervals.
+
+USAGE
+}
+
+
+sub log_msg {
+    my ($msg) = @_;
+    print STDERR "[INFO] $msg\n";
+}
+
+
+sub read_table {
     my ($file) = @_;
 
-    my @records;
+    die "[ERROR] File not found or empty: $file\n" unless -s $file;
 
-    my ($header_ref, $rows_ref) = read_tsv($file);
-    my @header = @$header_ref;
-    my @rows   = @$rows_ref;
-
-    return @records unless @header;
-
-    my %idx = header_index(@header);
-
-    # Region is not required because current depth_candidates.tsv does not have this column.
-    # Candidate_Length is also optional and can be calculated from Start/End.
-    foreach my $required (qw(SampleID Gene Transcript Chrom Start End)) {
-        die "[ERROR] Required column '$required' not found in depth file: $file\n"
-            unless exists $idx{$required};
-    }
-
-    foreach my $row (@rows) {
-        my %r = row_hash($row, \@header, \%idx);
-
-        next unless valid_coordinate($r{Chrom}, $r{Start}, $r{End});
-
-        my $candidate_status = exists $idx{Candidate_Status}
-            ? ($r{Candidate_Status} || "NA")
-            : "Depth_candidate";
-
-        next if $candidate_status ne "Depth_candidate";
-
-        my $gene       = clean_value($r{Gene});
-        my $transcript = clean_value($r{Transcript});
-
-        my $region = "NA";
-        if (exists $idx{Region}) {
-            $region = clean_value($r{Region});
-        }
-        elsif (exists $idx{Exon}) {
-            $region = clean_value($r{Exon});
-        }
-        elsif (exists $idx{Target_Region}) {
-            $region = clean_value($r{Target_Region});
-        }
-        elsif (exists $idx{Target_Name}) {
-            my ($g2, $t2, $r2) = parse_target_name($r{Target_Name});
-            $region = $r2;
-        }
-
-        my $candidate_length = exists $idx{Candidate_Length}
-            ? ($r{Candidate_Length} || ($r{End} - $r{Start} + 1))
-            : ($r{End} - $r{Start} + 1);
-
-        push @records, {
-            evidence_type        => "Depth",
-            sample               => clean_value($r{SampleID}),
-            gene                 => $gene,
-            transcript           => $transcript,
-            region               => $region,
-            chr                  => clean_value($r{Chrom}),
-            start                => int($r{Start}),
-            end                  => int($r{End}),
-            length               => $candidate_length,
-            depth_status         => exists $idx{Depth_Status} ? clean_value($r{Depth_Status}) : "NA",
-            region_mean_depth    => exists $idx{Region_Mean_Depth} ? clean_value($r{Region_Mean_Depth}) : "NA",
-            candidate_mean_depth => exists $idx{Candidate_Mean_Depth} ? clean_value($r{Candidate_Mean_Depth}) : "NA",
-            mean_depth_ratio     => exists $idx{Mean_Depth_Ratio} ? clean_value($r{Mean_Depth_Ratio}) : "NA",
-            target_name          => join("|", $gene, $transcript, $region),
-            source_record        => join(":", "Depth", $gene, $transcript, $region, $r{Chrom}, $r{Start}, $r{End}),
-        };
-    }
-
-    return @records;
-}
-
-
-# ============================================================
-# Read discordant evidence
-# ============================================================
-
-sub read_discordant_evidence {
-    my ($file) = @_;
-
-    my @records;
-
-    my ($header_ref, $rows_ref) = read_tsv($file);
-    my @header = @$header_ref;
-    my @rows   = @$rows_ref;
-
-    return @records unless @header;
-
-    my %idx = header_index(@header);
-
-    foreach my $required (qw(SampleID Chrom Start End Candidate_Length Discordant_Reads)) {
-        die "[ERROR] Required column '$required' not found in discordant file: $file\n"
-            unless exists $idx{$required};
-    }
-
-    foreach my $row (@rows) {
-        my %r = row_hash($row, \@header, \%idx);
-
-        next unless valid_coordinate($r{Chrom}, $r{Start}, $r{End});
-
-        my $candidate_status = $r{Candidate_Status} || "NA";
-        next if $candidate_status ne "Discordant_candidate";
-
-        my $target_name = clean_value($r{Target_Name} || "NA");
-        my ($gene, $transcript, $region) = parse_target_name($target_name);
-
-        push @records, {
-            evidence_type      => "Discordant",
-            sample             => clean_value($r{SampleID}),
-            gene               => $gene,
-            transcript         => $transcript,
-            region             => $region,
-            chr                => clean_value($r{Chrom}),
-            start              => int($r{Start}),
-            end                => int($r{End}),
-            length             => $r{Candidate_Length} || ($r{End} - $r{Start} + 1),
-            discordant_reads   => clean_value($r{Discordant_Reads} || 0),
-            median_insert_size => clean_value($r{Median_Insert_Size} || "NA"),
-            target_name        => $target_name,
-            source_record      => join(":", "Discordant", $gene, $transcript, $region, $r{Chrom}, $r{Start}, $r{End}),
-        };
-    }
-
-    return @records;
-}
-
-# ============================================================
-# Read split evidence
-# ============================================================
-
-sub read_split_evidence {
-    my ($file) = @_;
-
-    my @records;
-
-    my ($header_ref, $rows_ref) = read_tsv($file);
-    my @header = @$header_ref;
-    my @rows   = @$rows_ref;
-
-    return @records unless @header;
-
-    my %idx = header_index(@header);
-
-    foreach my $required (qw(SampleID Chrom Start End Candidate_Length Split_Reads)) {
-        die "[ERROR] Required column '$required' not found in split file: $file\n"
-            unless exists $idx{$required};
-    }
-
-    foreach my $row (@rows) {
-        my %r = row_hash($row, \@header, \%idx);
-
-        next unless valid_coordinate($r{Chrom}, $r{Start}, $r{End});
-
-        my $candidate_status = $r{Candidate_Status} || "NA";
-        next if $candidate_status ne "Split_candidate";
-
-        my $target_name = clean_value($r{Target_Name} || "NA");
-        my ($gene, $transcript, $region) = parse_target_name($target_name);
-
-        push @records, {
-            evidence_type        => "Split",
-            sample               => clean_value($r{SampleID}),
-            gene                 => $gene,
-            transcript           => $transcript,
-            region               => $region,
-            chr                  => clean_value($r{Chrom}),
-            start                => int($r{Start}),
-            end                  => int($r{End}),
-            length               => $r{Candidate_Length} || ($r{End} - $r{Start} + 1),
-            split_reads          => clean_value($r{Split_Reads} || 0),
-            left_softclip_reads  => clean_value($r{Left_Softclip_Reads} || 0),
-            right_softclip_reads => clean_value($r{Right_Softclip_Reads} || 0),
-            sa_tag_reads         => clean_value($r{SA_Tag_Reads} || 0),
-            target_name          => $target_name,
-            source_record        => join(":", "Split", $gene, $transcript, $region, $r{Chrom}, $r{Start}, $r{End}),
-        };
-    }
-
-    return @records;
-}
-
-# ============================================================
-# Cluster evidence records
-# ============================================================
-
-sub cluster_evidence_records {
-    my %args = @_;
-
-    my $records_ref    = $args{records};
-    my $merge_distance = $args{merge_distance};
-
-    my @records = @$records_ref;
-    my %by_chr;
-
-    foreach my $r (@records) {
-        push @{ $by_chr{ $r->{chr} } }, $r;
-    }
-
-    my @clusters;
-
-    foreach my $chr (sort keys %by_chr) {
-        my @sorted = sort {
-            $a->{start} <=> $b->{start}
-                ||
-            $a->{end} <=> $b->{end}
-        } @{ $by_chr{$chr} };
-
-        my @current;
-        my $current_end;
-
-        foreach my $r (@sorted) {
-            if (!@current) {
-                @current = ($r);
-                $current_end = $r->{end};
-                next;
-            }
-
-            if ($r->{start} <= $current_end + $merge_distance) {
-                push @current, $r;
-                $current_end = max($current_end, $r->{end});
-            } else {
-                push @clusters, [@current];
-
-                @current = ($r);
-                $current_end = $r->{end};
-            }
-        }
-
-        push @clusters, [@current] if @current;
-    }
-
-    return @clusters;
-}
-
-# ============================================================
-# Build final candidate
-# ============================================================
-
-sub build_final_candidate {
-    my ($cluster_ref) = @_;
-
-    my @records = @$cluster_ref;
-
-    my $chr = $records[0]->{chr};
-
-    my @starts = map { $_->{start} } @records;
-    my @ends   = map { $_->{end} } @records;
-
-    my $start = min(@starts);
-    my $end   = max(@ends);
-
-    my %evidence_types;
-    my %genes;
-    my %transcripts;
-    my %regions;
-    my %targets;
-
-    my $has_depth      = 0;
-    my $has_discordant = 0;
-    my $has_split      = 0;
-
-    my @depth_status;
-    my @region_mean_depth;
-    my @candidate_mean_depth;
-    my @mean_depth_ratio;
-
-    my $discordant_reads = 0;
-    my @median_insert_size;
-
-    my $split_reads          = 0;
-    my $left_softclip_reads  = 0;
-    my $right_softclip_reads = 0;
-    my $sa_tag_reads         = 0;
-
-    my $depth_record_count      = 0;
-    my $discordant_record_count = 0;
-    my $split_record_count      = 0;
-
-    my @source_records;
-
-    foreach my $r (@records) {
-        $evidence_types{ $r->{evidence_type} } = 1;
-
-        $genes{ $r->{gene} }++
-            if is_known_value($r->{gene});
-
-        $transcripts{ $r->{transcript} }++
-            if is_known_value($r->{transcript});
-
-        $regions{ $r->{region} }++
-            if is_known_value($r->{region});
-
-        $targets{ $r->{target_name} }++
-            if is_known_value($r->{target_name});
-
-        push @source_records, $r->{source_record};
-
-        if ($r->{evidence_type} eq "Depth") {
-            $has_depth = 1;
-            $depth_record_count++;
-
-            push @depth_status, $r->{depth_status}
-                if is_known_value($r->{depth_status});
-
-            push @region_mean_depth, $r->{region_mean_depth}
-                if is_numeric($r->{region_mean_depth});
-
-            push @candidate_mean_depth, $r->{candidate_mean_depth}
-                if is_numeric($r->{candidate_mean_depth});
-
-            push @mean_depth_ratio, $r->{mean_depth_ratio}
-                if is_numeric($r->{mean_depth_ratio});
-        }
-        elsif ($r->{evidence_type} eq "Discordant") {
-            $has_discordant = 1;
-            $discordant_record_count++;
-
-            $discordant_reads += numeric_or_zero($r->{discordant_reads});
-
-            push @median_insert_size, $r->{median_insert_size}
-                if is_numeric($r->{median_insert_size});
-        }
-        elsif ($r->{evidence_type} eq "Split") {
-            $has_split = 1;
-            $split_record_count++;
-
-            $split_reads          += numeric_or_zero($r->{split_reads});
-            $left_softclip_reads  += numeric_or_zero($r->{left_softclip_reads});
-            $right_softclip_reads += numeric_or_zero($r->{right_softclip_reads});
-            $sa_tag_reads         += numeric_or_zero($r->{sa_tag_reads});
-        }
-    }
-
-    my $evidence_count = scalar(keys %evidence_types);
-    my $evidence_types = join(",", sort keys %evidence_types);
-    my $evidence_level = classify_evidence_level($evidence_count);
-
-    my $gene       = choose_most_frequent_key(%genes);
-    my $transcript = choose_most_frequent_key(%transcripts);
-    my $region     = choose_most_frequent_key(%regions);
-
-    $gene       = "NA" unless $gene;
-    $transcript = "NA" unless $transcript;
-    $region     = "NA" unless $region;
-
-    my @unique_source_records = unique(@source_records);
-
-    my $comment = build_comment(
-        has_depth      => $has_depth,
-        has_discordant => $has_discordant,
-        has_split      => $has_split,
-    );
-
-    return {
-        gene             => $gene,
-        transcript       => $transcript,
-        region           => $region,
-        chr              => $chr,
-        start            => $start,
-        end              => $end,
-        candidate_length => $end - $start + 1,
-
-        evidence_count => $evidence_count,
-        evidence_types => $evidence_types,
-        evidence_level => $evidence_level,
-
-        has_depth      => $has_depth,
-        has_discordant => $has_discordant,
-        has_split      => $has_split,
-
-        depth_status => @depth_status ? join(",", unique(@depth_status)) : "NA",
-
-        region_mean_depth => @region_mean_depth
-            ? sprintf("%.4f", mean(@region_mean_depth))
-            : "NA",
-
-        candidate_mean_depth => @candidate_mean_depth
-            ? sprintf("%.4f", mean(@candidate_mean_depth))
-            : "NA",
-
-        mean_depth_ratio => @mean_depth_ratio
-            ? sprintf("%.4f", mean(@mean_depth_ratio))
-            : "NA",
-
-        min_mean_depth_ratio => @mean_depth_ratio
-            ? sprintf("%.4f", min(@mean_depth_ratio))
-            : "NA",
-
-        max_mean_depth_ratio => @mean_depth_ratio
-            ? sprintf("%.4f", max(@mean_depth_ratio))
-            : "NA",
-
-        discordant_reads => $discordant_reads,
-
-        median_insert_size => @median_insert_size
-            ? sprintf("%.2f", mean(@median_insert_size))
-            : "NA",
-
-        split_reads          => $split_reads,
-        left_softclip_reads  => $left_softclip_reads,
-        right_softclip_reads => $right_softclip_reads,
-        sa_tag_reads         => $sa_tag_reads,
-
-        depth_record_count      => $depth_record_count,
-        discordant_record_count => $discordant_record_count,
-        split_record_count      => $split_record_count,
-        source_record_count     => scalar(@unique_source_records),
-
-        source_records => join(",", @unique_source_records),
-        source_targets => %targets ? join(",", sort keys %targets) : "NA",
-
-        all_genes       => %genes ? join(",", sort keys %genes) : "NA",
-        all_transcripts => %transcripts ? join(",", sort keys %transcripts) : "NA",
-        all_regions     => %regions ? join(",", sort keys %regions) : "NA",
-
-        candidate_status => "Pass",
-        comment          => $comment,
-    };
-}
-
-# ============================================================
-# Classification and comments
-# ============================================================
-
-sub classify_evidence_level {
-    my ($count) = @_;
-
-    return "High"   if $count >= 3;
-    return "Medium" if $count == 2;
-    return "Low"    if $count == 1;
-    return "None";
-}
-
-sub build_comment {
-    my %args = @_;
-
-    my $has_depth      = $args{has_depth};
-    my $has_discordant = $args{has_discordant};
-    my $has_split      = $args{has_split};
-
-    if ($has_depth && $has_discordant && $has_split) {
-        return "Supported by depth reduction, discordant read pairs, and split reads";
-    }
-
-    if ($has_depth && $has_discordant) {
-        return "Supported by depth reduction and discordant read pairs";
-    }
-
-    if ($has_depth && $has_split) {
-        return "Supported by depth reduction and split reads";
-    }
-
-    if ($has_discordant && $has_split) {
-        return "Supported by discordant read pairs and split reads";
-    }
-
-    if ($has_depth) {
-        return "Supported only by depth reduction";
-    }
-
-    if ($has_discordant) {
-        return "Supported only by discordant read pairs";
-    }
-
-    if ($has_split) {
-        return "Supported only by split reads";
-    }
-
-    return "No valid evidence";
-}
-
-# ============================================================
-# TSV helpers
-# ============================================================
-
-sub read_tsv {
-    my ($file) = @_;
-
-    open my $fh, "<", $file or die "[ERROR] Cannot open file: $file\n";
+    open my $fh, '<', $file
+        or die "[ERROR] Cannot open file $file: $!\n";
 
     my $header = <$fh>;
-
-    if (!defined $header) {
-        close $fh;
-        return ([], []);
-    }
+    die "[ERROR] Empty file: $file\n" unless defined $header;
 
     chomp $header;
     $header =~ s/\r$//;
 
-    my @header = split /\t/, $header;
+    my @cols = split_line($header);
     my @rows;
 
     while (my $line = <$fh>) {
@@ -750,336 +307,759 @@ sub read_tsv {
 
         next if $line =~ /^\s*$/;
 
-        my @f = split /\t/, $line, -1;
-        push @rows, \@f;
+        my @v = split_line($line, scalar(@cols));
+
+        my %row;
+        for my $i (0 .. $#cols) {
+            $row{$cols[$i]} =
+                defined $v[$i] && $v[$i] ne ''
+                ? $v[$i]
+                : 'NA';
+        }
+
+        push @rows, \%row;
     }
 
     close $fh;
 
-    return (\@header, \@rows);
+    return (\@cols, \@rows);
 }
 
-sub header_index {
-    my (@header) = @_;
 
-    my %idx;
+sub split_line {
+    my ($line, $limit) = @_;
 
-    for (my $i = 0; $i < @header; $i++) {
-        $idx{$header[$i]} = $i;
-    }
-
-    return %idx;
-}
-
-sub row_hash {
-    my ($row_ref, $header_ref, $idx_ref) = @_;
-
-    my @row    = @$row_ref;
-    my @header = @$header_ref;
-
-    my %r;
-
-    foreach my $h (@header) {
-        my $i = $idx_ref->{$h};
-        $r{$h} = defined $row[$i] ? $row[$i] : "NA";
-    }
-
-    return %r;
-}
-
-# ============================================================
-# Config helpers
-# ============================================================
-
-sub read_config {
-    my ($file) = @_;
-
-    my %conf;
-
-    open my $fh, "<", $file or die "[ERROR] Cannot open config file: $file\n";
-
-    while (my $line = <$fh>) {
-        chomp $line;
-        $line =~ s/\r$//;
-
-        next if $line =~ /^\s*$/;
-        next if $line =~ /^\s*#/;
-
-        if ($line =~ /^\s*([^=\s]+)\s*=\s*(.*?)\s*$/) {
-            my $key = $1;
-            my $val = $2;
-
-            $val =~ s/^['"]//;
-            $val =~ s/['"]$//;
-
-            $conf{$key} = $val;
-        }
-    }
-
-    close $fh;
-
-    return %conf;
-}
-
-sub get_conf_value {
-    my ($conf_ref, $key, $default) = @_;
-
-    if (
-        exists $conf_ref->{$key}
-        && defined $conf_ref->{$key}
-        && $conf_ref->{$key} ne ""
-    ) {
-        return $conf_ref->{$key};
-    }
-
-    return $default;
-}
-
-# ============================================================
-# General helpers
-# ============================================================
-
-sub parse_target_name {
-    my ($target_name) = @_;
-
-    return ("NA", "NA", "NA")
-        unless defined $target_name && $target_name ne "";
-
-    my @targets = split /,/, $target_name;
-    my $name = "NA";
-
-    foreach my $t (@targets) {
-        $t = clean_value($t);
-
-        if ($t && $t ne "NA" && $t ne "whole_bam") {
-            $name = $t;
-            last;
-        }
-    }
-
-    $name = $targets[0] if $name eq "NA" && @targets;
-
-    my ($gene, $transcript, $region);
-
-    if ($name =~ /\|/) {
-        my @x = split /\|/, $name;
-        $gene       = $x[0] || "NA";
-        $transcript = $x[1] || "NA";
-        $region     = $x[2] || "NA";
-    }
-    elsif ($name =~ /:/) {
-        my @x = split /:/, $name;
-        $gene       = $x[0] || "NA";
-        $transcript = $x[1] || "NA";
-        $region     = $x[2] || "NA";
+    if ($line =~ /\t/) {
+        return split /\t/, $line, defined $limit ? $limit : 0;
     }
     else {
-        $gene       = $name || "NA";
-        $transcript = "NA";
-        $region     = "NA";
+        return split /\s+/, $line, defined $limit ? $limit : 0;
+    }
+}
+
+
+sub require_columns {
+    my ($file, $cols_ref, @required) = @_;
+
+    my %has = map { $_ => 1 } @$cols_ref;
+
+    for my $c (@required) {
+        die "[ERROR] Required column '$c' not found in $file\n"
+            unless $has{$c};
+    }
+}
+
+
+sub read_depth_records {
+    my ($file, $sample_filter) = @_;
+
+    my ($cols, $rows) = read_table($file);
+
+    require_columns(
+        $file,
+        $cols,
+        qw/SampleID Gene Chrom Start End/
+    );
+
+    my @out;
+
+    for my $row (@$rows) {
+        next if normalize_value($row->{SampleID}) ne $sample_filter;
+
+        my ($s, $e) = normalize_interval(
+            $row->{Start},
+            $row->{End},
+            $file
+        );
+
+        push @out, {
+            Type           => 'Depth',
+            SampleID       => normalize_value($row->{SampleID}),
+            Gene           => normalize_value($row->{Gene}),
+            Classification => normalize_value($row->{Classification}),
+            Transcript     => normalize_value($row->{Transcript}),
+            Chrom          => normalize_value($row->{Chrom}),
+            Start          => $s,
+            End            => $e,
+            Source_ID      => normalize_value($row->{Del_Window_IDs}),
+            Meta           => {%$row},
+        };
     }
 
-    return (
-        clean_value($gene),
-        clean_value($transcript),
-        clean_value($region),
+    log_msg("Depth records loaded: " . scalar(@out));
+
+    return @out;
+}
+
+
+sub read_split_cluster_records {
+    my ($file, $sample_filter) = @_;
+
+    my ($cols, $rows) = read_table($file);
+
+    require_columns(
+        $file,
+        $cols,
+        qw/Sample Cluster_ID SV_Chrom Cluster_Start Cluster_End/
+    );
+
+    my @out;
+
+    for my $row (@$rows) {
+        next if normalize_value($row->{Sample}) ne $sample_filter;
+
+        if (exists $row->{Cluster_Status}) {
+            next if normalize_value($row->{Cluster_Status}) ne 'Pass';
+        }
+
+        my ($s, $e) = normalize_interval(
+            $row->{Cluster_Start},
+            $row->{Cluster_End},
+            $file
+        );
+
+        my @genes = split_genes(first_non_na(
+            $row->{Scan_Genes},
+            $row->{Gene},
+            $row->{Genes}
+        ));
+
+        @genes = ('NA') unless @genes;
+
+        for my $gene (@genes) {
+            push @out, {
+                Type           => 'Split',
+                SampleID       => normalize_value($row->{Sample}),
+                Gene           => $gene,
+                Classification => 'NA',
+                Transcript     => 'NA',
+                Chrom          => normalize_value($row->{SV_Chrom}),
+                Start          => $s,
+                End            => $e,
+                Source_ID      => normalize_value($row->{Cluster_ID}),
+                Meta           => {%$row},
+            };
+        }
+    }
+
+    log_msg("Split cluster records loaded: " . scalar(@out));
+
+    return @out;
+}
+
+
+sub read_discordant_records {
+    my ($file, $sample_filter) = @_;
+
+    my ($cols, $rows) = read_table($file);
+
+    require_columns(
+        $file,
+        $cols,
+        qw/SampleID Cluster_ID Chrom Start End/
+    );
+
+    my @out;
+
+    for my $row (@$rows) {
+        next if normalize_value($row->{SampleID}) ne $sample_filter;
+
+        my ($s, $e) = normalize_interval(
+            $row->{Start},
+            $row->{End},
+            $file
+        );
+
+        my @genes = split_genes(first_non_na(
+            $row->{Gene},
+            $row->{Target_Gene},
+            $row->{Target_Name}
+        ));
+
+        @genes = ('NA') unless @genes;
+
+        for my $gene (@genes) {
+            push @out, {
+                Type           => 'Discordant',
+                SampleID       => normalize_value($row->{SampleID}),
+                Gene           => $gene,
+                Classification => 'NA',
+                Transcript     => normalize_value($row->{Transcript}),
+                Chrom          => normalize_value($row->{Chrom}),
+                Start          => $s,
+                End            => $e,
+                Source_ID      => normalize_value($row->{Cluster_ID}),
+                Meta           => {%$row},
+            };
+        }
+    }
+
+    log_msg("Discordant records loaded: " . scalar(@out));
+
+    return @out;
+}
+
+
+sub normalize_interval {
+    my ($s, $e, $file) = @_;
+
+    $s = normalize_value($s);
+    $e = normalize_value($e);
+
+    die "[ERROR] Invalid interval in $file: Start=$s End=$e\n"
+        unless $s =~ /^\d+$/ && $e =~ /^\d+$/;
+
+    ($s, $e) = ($e, $s) if $s > $e;
+
+    return ($s + 0, $e + 0);
+}
+
+
+sub normalize_value {
+    my ($v) = @_;
+
+    return 'NA' unless defined $v;
+
+    $v =~ s/^\s+//;
+    $v =~ s/\s+$//;
+
+    return $v eq '' ? 'NA' : $v;
+}
+
+
+sub first_non_na {
+    for my $v (@_) {
+        $v = normalize_value($v);
+        return $v if $v ne 'NA';
+    }
+
+    return 'NA';
+}
+
+
+sub split_genes {
+    my ($v) = @_;
+
+    $v = normalize_value($v);
+
+    return () if $v eq 'NA' || $v eq '.' || $v eq '-';
+
+    if ($v =~ /^([A-Za-z0-9_.-]+)\|/) {
+        $v = $1;
+    }
+
+    my @genes = split /[,;]+/, $v;
+
+    @genes = grep {
+        $_ ne '' && $_ ne 'NA'
+    } map {
+        normalize_value($_)
+    } @genes;
+
+    my %seen;
+
+    return grep {
+        !$seen{$_}++
+    } @genes;
+}
+
+
+sub build_position_support_segments {
+    my ($gene, $chrom, $records) = @_;
+
+    my %events;
+
+    for my $r (@$records) {
+        my $type = $r->{Type};
+
+        $events{$r->{Start}}{$type}++;
+        $events{$r->{End} + 1}{$type}--;
+    }
+
+    my @pos = sort { $a <=> $b } keys %events;
+
+    return () if @pos < 2;
+
+    my %active = (
+        Depth      => 0,
+        Split      => 0,
+        Discordant => 0,
+    );
+
+    my @segments;
+
+    for my $i (0 .. $#pos - 1) {
+        my $p = $pos[$i];
+
+        for my $type (keys %{ $events{$p} }) {
+            $active{$type} += $events{$p}{$type};
+        }
+
+        my $seg_start = $p;
+        my $seg_end   = $pos[$i + 1] - 1;
+
+        next if $seg_start > $seg_end;
+
+        my @types = grep {
+            $active{$_} > 0
+        } qw/Depth Split Discordant/;
+
+        next unless @types;
+
+        my @overlap_records = grep {
+            $_->{Start} <= $seg_end && $_->{End} >= $seg_start
+        } @$records;
+
+        push @segments, make_candidate(
+            $gene,
+            $chrom,
+            $seg_start,
+            $seg_end,
+            \@types,
+            \@overlap_records
+        );
+    }
+
+    @segments = merge_adjacent_segments(@segments);
+
+    return @segments;
+}
+
+
+sub make_candidate {
+    my ($gene, $chrom, $core_start, $core_end, $types_ref, $records_ref) = @_;
+
+    my %type_has = map { $_ => 1 } @$types_ref;
+
+    my @ordered_types = grep {
+        $type_has{$_}
+    } qw/Depth Split Discordant/;
+
+    my $evidence_count = scalar(@ordered_types);
+
+    my ($merged_start, $merged_end) = ($core_start, $core_end);
+
+    for my $r (@$records_ref) {
+        $merged_start = $r->{Start} if $r->{Start} < $merged_start;
+        $merged_end   = $r->{End}   if $r->{End}   > $merged_end;
+    }
+
+    my @depth_records      = grep { $_->{Type} eq 'Depth' } @$records_ref;
+    my @split_records      = grep { $_->{Type} eq 'Split' } @$records_ref;
+    my @discordant_records = grep { $_->{Type} eq 'Discordant' } @$records_ref;
+
+    my ($best_start, $best_end, $best_evidence) = select_best_interval(
+        \@depth_records,
+        \@split_records,
+        \@discordant_records
+    );
+
+    my $best_size = 'NA';
+    if ($best_start ne 'NA' && $best_end ne 'NA') {
+        $best_size = $best_end - $best_start + 1;
+    }
+
+    my $sample = first_non_na(
+        (map { $_->{SampleID} } @$records_ref)
+    );
+
+    my $classification = first_non_na(
+        (map { $_->{Classification} } @depth_records)
+    );
+
+    my $transcript = first_non_na(
+        (map { $_->{Transcript} } @depth_records),
+        (map { $_->{Transcript} } @discordant_records)
+    );
+
+    my $evidence_types = join(',', @ordered_types);
+    my $level = evidence_level($evidence_count);
+
+    return {
+        SampleID                => $sample,
+        Gene                    => $gene,
+        Classification          => $classification,
+        Transcript              => $transcript,
+        Chrom                   => $chrom,
+
+        Merged_Start            => $merged_start,
+        Merged_End              => $merged_end,
+        Merged_Size             => $merged_end - $merged_start + 1,
+
+        Core_Start              => $core_start,
+        Core_End                => $core_end,
+        Core_Size               => $core_end - $core_start + 1,
+
+        Best_Start              => $best_start,
+        Best_End                => $best_end,
+        Best_Size               => $best_size,
+        Best_Evidence           => $best_evidence,
+
+        Evidence_Count          => $evidence_count,
+        Evidence_Level          => $level,
+        Evidence_Types          => $evidence_types,
+
+        Depth_Support           => $type_has{Depth}      ? 'Yes' : 'No',
+        Split_Read_Support      => $type_has{Split}      ? 'Yes' : 'No',
+        Discordant_Read_Support => $type_has{Discordant} ? 'Yes' : 'No',
+
+        Depth_Range             => ranges_for_type(\@depth_records),
+        Split_Range             => ranges_for_type(\@split_records),
+        Discordant_Range        => ranges_for_type(\@discordant_records),
+
+        Window_Count            => sum_unique_field(\@depth_records, 'Source_ID', 'Window_Count'),
+        Gene_Mean_Depth         => uniq_field(\@depth_records, 'Gene_Mean_Depth'),
+        Candidate_Mean_Depth    => uniq_field(\@depth_records, 'Candidate_Mean_Depth'),
+        Mean_Depth_Ratio        => uniq_field(\@depth_records, 'Mean_Depth_Ratio'),
+        Min_Depth_Ratio         => uniq_field(\@depth_records, 'Min_Depth_Ratio'),
+        Max_Depth_Ratio         => uniq_field(\@depth_records, 'Max_Depth_Ratio'),
+
+        Split_Cluster_IDs       => uniq_values((map { $_->{Source_ID} } @split_records)),
+        Split_Reads             => sum_unique_field(\@split_records, 'Source_ID', 'Support_Reads'),
+        Split_Records           => sum_unique_field(\@split_records, 'Source_ID', 'Support_Records'),
+
+        Discordant_Cluster_IDs  => uniq_values((map { $_->{Source_ID} } @discordant_records)),
+        Discordant_Reads        => sum_unique_field(\@discordant_records, 'Source_ID', 'Discordant_Reads'),
+        Median_Insert_Size      => uniq_field(\@discordant_records, 'Median_Insert_Size'),
+
+        All_Genes               => uniq_values((map { $_->{Gene} } @$records_ref)),
+        All_Transcripts         => uniq_values((map { $_->{Transcript} } @$records_ref)),
+        Source_Records          => source_records($records_ref),
+
+        Candidate_Status        => $evidence_count == 3 ? 'Three_evidence_candidate'
+                                  : $evidence_count == 2 ? 'Two_evidence_candidate'
+                                  : 'Single_evidence_candidate',
+
+        Comment                 => "Core region supported by $evidence_types evidence; Best interval selected by priority Split > Discordant > Depth",
+    };
+}
+
+
+sub select_best_interval {
+    my ($depth_records, $split_records, $discordant_records) = @_;
+
+    if (@$split_records) {
+        return representative_interval($split_records, 'Split');
+    }
+
+    if (@$discordant_records) {
+        return representative_interval($discordant_records, 'Discordant');
+    }
+
+    if (@$depth_records) {
+        return representative_interval($depth_records, 'Depth');
+    }
+
+    return ('NA', 'NA', 'NA');
+}
+
+
+sub representative_interval {
+    my ($records_ref, $evidence_name) = @_;
+
+    return ('NA', 'NA', 'NA') unless @$records_ref;
+
+    my $start = $records_ref->[0]{Start};
+    my $end   = $records_ref->[0]{End};
+
+    for my $r (@$records_ref) {
+        $start = $r->{Start} if $r->{Start} < $start;
+        $end   = $r->{End}   if $r->{End}   > $end;
+    }
+
+    return ($start, $end, $evidence_name);
+}
+
+
+sub merge_adjacent_segments {
+    my @segments = @_;
+
+    return @segments unless @segments;
+
+    @segments = sort {
+           $a->{Core_Start} <=> $b->{Core_Start}
+        || $a->{Core_End}   <=> $b->{Core_End}
+    } @segments;
+
+    my @merged;
+
+    for my $s (@segments) {
+        if (
+            @merged
+            && $merged[-1]{Chrom} eq $s->{Chrom}
+            && $merged[-1]{Gene} eq $s->{Gene}
+            && $merged[-1]{Evidence_Types} eq $s->{Evidence_Types}
+            && $merged[-1]{Best_Evidence} eq $s->{Best_Evidence}
+            && $merged[-1]{Core_End} + 1 == $s->{Core_Start}
+        ) {
+            my $prev = $merged[-1];
+
+            $prev->{Core_End}  = $s->{Core_End};
+            $prev->{Core_Size} = $prev->{Core_End} - $prev->{Core_Start} + 1;
+
+            $prev->{Merged_Start} = min_num($prev->{Merged_Start}, $s->{Merged_Start});
+            $prev->{Merged_End}   = max_num($prev->{Merged_End},   $s->{Merged_End});
+            $prev->{Merged_Size}  = $prev->{Merged_End} - $prev->{Merged_Start} + 1;
+
+            if ($prev->{Best_Start} ne 'NA' && $s->{Best_Start} ne 'NA') {
+                $prev->{Best_Start} = min_num($prev->{Best_Start}, $s->{Best_Start});
+                $prev->{Best_End}   = max_num($prev->{Best_End},   $s->{Best_End});
+                $prev->{Best_Size}  = $prev->{Best_End} - $prev->{Best_Start} + 1;
+            }
+
+            for my $field (
+                qw/
+                    Depth_Range
+                    Split_Range
+                    Discordant_Range
+                    Split_Cluster_IDs
+                    Discordant_Cluster_IDs
+                    All_Genes
+                    All_Transcripts
+                    Source_Records
+                /
+            ) {
+                $prev->{$field} = merge_csv_values(
+                    $prev->{$field},
+                    $s->{$field}
+                );
+            }
+        }
+        else {
+            push @merged, {%$s};
+        }
+    }
+
+    return @merged;
+}
+
+
+sub ranges_for_type {
+    my ($records_ref) = @_;
+
+    return 'NA' unless @$records_ref;
+
+    return uniq_values(
+        (map {
+            $_->{Chrom} . ':' . $_->{Start} . '-' . $_->{End}
+        } @$records_ref)
     );
 }
 
-sub valid_coordinate {
-    my ($chr, $start, $end) = @_;
 
-    return 0 unless defined $chr && $chr ne "" && $chr ne "NA";
-    return 0 unless defined $start && $start =~ /^\d+$/;
-    return 0 unless defined $end   && $end   =~ /^\d+$/;
-    return 0 unless $end >= $start;
+sub source_records {
+    my ($records_ref) = @_;
 
-    return 1;
+    return uniq_values(
+        (map {
+            $_->{Type}
+            . ':'
+            . $_->{Source_ID}
+            . ':'
+            . $_->{Chrom}
+            . ':'
+            . $_->{Start}
+            . '-'
+            . $_->{End}
+        } @$records_ref)
+    );
 }
 
-sub choose_most_frequent_key {
-    my (%hash) = @_;
 
-    return "" unless %hash;
-
-    my @sorted = sort {
-        $hash{$b} <=> $hash{$a}
-            ||
-        $a cmp $b
-    } keys %hash;
-
-    return $sorted[0];
-}
-
-sub numeric_or_zero {
-    my ($x) = @_;
-
-    return 0 unless defined $x;
-    return 0 if $x eq "NA";
-    return $x if is_numeric($x);
-
-    return 0;
-}
-
-sub is_numeric {
-    my ($x) = @_;
-
-    return 0 unless defined $x;
-    return 0 if $x eq "NA";
-    return $x =~ /^-?\d+(\.\d+)?$/ ? 1 : 0;
-}
-
-sub mean {
-    my @x = @_;
-
-    my $sum = 0;
-    my $n   = 0;
-
-    foreach my $v (@x) {
-        next unless is_numeric($v);
-
-        $sum += $v;
-        $n++;
-    }
-
-    return 0 unless $n > 0;
-
-    return $sum / $n;
-}
-
-sub unique {
-    my @x = @_;
+sub uniq_values {
+    my @v = @_;
 
     my %seen;
-    my @u;
+    my @out;
 
-    foreach my $v (@x) {
-        next unless defined $v;
+    for my $x (@v) {
+        $x = normalize_value($x);
 
-        $v = clean_value($v);
+        next if $x eq 'NA';
+        next if $seen{$x}++;
 
-        next if $v eq "";
-        next if $seen{$v}++;
-
-        push @u, $v;
+        push @out, $x;
     }
 
-    return @u;
+    return @out ? join(',', @out) : 'NA';
 }
 
-sub min {
-    my @x = @_;
 
-    return 0 unless @x;
+sub uniq_field {
+    my ($records_ref, $field) = @_;
 
-    my $min = $x[0];
+    return uniq_values(
+        (map {
+            $_->{Meta}{$field}
+        } @$records_ref)
+    );
+}
 
-    foreach my $v (@x) {
-        $min = $v if $v < $min;
+
+sub sum_unique_field {
+    my ($records_ref, $id_field, $value_field) = @_;
+
+    my %seen;
+    my $sum = 0;
+    my $has = 0;
+
+    for my $r (@$records_ref) {
+        my $id = normalize_value($r->{$id_field});
+        $id = normalize_value($r->{Source_ID}) if $id eq 'NA';
+
+        next if $seen{$id}++;
+
+        my $v = $r->{Meta}{$value_field};
+
+        next unless defined $v && $v =~ /^-?\d+(?:\.\d+)?$/;
+
+        $sum += $v;
+        $has = 1;
     }
 
-    return $min;
+    return $has ? $sum : 'NA';
 }
 
-sub max {
-    my @x = @_;
 
-    return 0 unless @x;
+sub merge_csv_values {
+    my ($a, $b) = @_;
 
-    my $max = $x[0];
+    my @v;
 
-    foreach my $v (@x) {
-        $max = $v if $v > $max;
+    for my $x ($a, $b) {
+        next unless defined $x;
+        next if $x eq 'NA';
+
+        push @v, split /,/, $x;
     }
 
-    return $max;
+    return uniq_values(@v);
 }
 
-sub clean_value {
-    my ($x) = @_;
 
-    return "NA" unless defined $x;
+sub evidence_level {
+    my ($n) = @_;
 
-    $x =~ s/^\s+//;
-    $x =~ s/\s+$//;
-
-    return "NA" if $x eq "";
-
-    return $x;
+    return $n >= 3 ? 'High'
+         : $n == 2 ? 'Moderate'
+         : 'Low';
 }
 
-sub is_known_value {
-    my ($x) = @_;
 
-    return 0 unless defined $x;
+sub write_candidates {
+    my ($file, $candidates_ref) = @_;
 
-    $x = clean_value($x);
+    my $dir = dirname($file);
 
-    return 0 if $x eq "";
-    return 0 if $x eq "NA";
-    return 0 if $x eq ".";
-    return 0 if $x eq "whole_bam";
+    if (defined $dir && $dir ne '.' && !-d $dir) {
+        system('mkdir', '-p', $dir) == 0
+            or die "[ERROR] Cannot create output directory: $dir\n";
+    }
 
-    return 1;
+    my @header = qw/
+        SampleID
+        Gene
+        Classification
+        Transcript
+        Chrom
+
+        Merged_Start
+        Merged_End
+        Merged_Size
+
+        Core_Start
+        Core_End
+        Core_Size
+
+        Best_Start
+        Best_End
+        Best_Size
+        Best_Evidence
+
+        Evidence_Count
+        Evidence_Level
+        Evidence_Types
+
+        Depth_Support
+        Split_Read_Support
+        Discordant_Read_Support
+
+        Depth_Range
+        Split_Range
+        Discordant_Range
+
+        Window_Count
+        Gene_Mean_Depth
+        Candidate_Mean_Depth
+        Mean_Depth_Ratio
+        Min_Depth_Ratio
+        Max_Depth_Ratio
+
+        Split_Cluster_IDs
+        Split_Reads
+        Split_Records
+
+        Discordant_Cluster_IDs
+        Discordant_Reads
+        Median_Insert_Size
+
+        All_Genes
+        All_Transcripts
+        Source_Records
+
+        Candidate_Status
+        Comment
+    /;
+
+    open my $out, '>', $file
+        or die "[ERROR] Cannot write output file $file: $!\n";
+
+    print $out join("\t", @header), "\n";
+
+    for my $c (@$candidates_ref) {
+        my @v = map {
+            defined $c->{$_} && $c->{$_} ne '' ? $c->{$_} : 'NA'
+        } @header;
+
+        print $out join("\t", @v), "\n";
+    }
+
+    close $out;
 }
 
-sub file_has_content {
-    my ($file) = @_;
 
-    return 0 unless defined $file;
-    return 0 unless -e $file;
-    return 0 unless -s $file;
+sub chrom_cmp {
+    my ($a, $b) = @_;
 
-    return 1;
+    my $aa = chrom_rank($a);
+    my $bb = chrom_rank($b);
+
+    return $aa <=> $bb || $a cmp $b;
 }
 
-sub safe_abs_path {
-    my ($path) = @_;
 
-    return undef unless defined $path && $path ne "";
+sub chrom_rank {
+    my ($c) = @_;
 
-    my $abs = abs_path($path);
+    $c = normalize_value($c);
+    $c =~ s/^chr//i;
 
-    return defined $abs ? $abs : $path;
+    return $c if $c =~ /^\d+$/;
+    return 23 if uc($c) eq 'X';
+    return 24 if uc($c) eq 'Y';
+    return 25 if uc($c) =~ /^(M|MT)$/;
+
+    return 1000;
 }
 
-sub defined_or_na {
-    my ($x) = @_;
 
-    return defined $x ? $x : "NA";
+sub min_num {
+    return $_[0] < $_[1] ? $_[0] : $_[1];
 }
 
-sub usage {
-    return <<"USAGE";
 
-Usage:
-  perl bin/merge_evidence.pl \\
-    --config conf/hcm_exondel.conf \\
-    --sample SAMPLE001 \\
-    --depth results/SAMPLE001/01.depth/SAMPLE001.depth_candidates.tsv \\
-    --discordant results/SAMPLE001/03.discordant_reads/SAMPLE001.discordant_reads.tsv \\
-    --split results/SAMPLE001/02.split_reads/SAMPLE001.split_reads.tsv \\
-    --out results/SAMPLE001/04.candidates/SAMPLE001.merged_candidates.tsv
-
-Required arguments:
-  --config       Config file
-  --sample       Sample ID
-  --depth        Depth candidate file
-  --discordant   Discordant read candidate file
-  --split        Split-read candidate file
-  --out          Final merged candidate report
-
-Config parameters used by this script:
-  EVIDENCE_MERGE_DISTANCE
-  MIN_EVIDENCE_COUNT
-
-Recommended config:
-  EVIDENCE_MERGE_DISTANCE=1000
-  MIN_EVIDENCE_COUNT=2
-
-Output:
-  merged_candidates.tsv
-
-USAGE
+sub max_num {
+    return $_[0] > $_[1] ? $_[0] : $_[1];
 }
+
 
