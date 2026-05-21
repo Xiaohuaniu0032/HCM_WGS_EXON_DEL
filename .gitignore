@@ -4,6 +4,14 @@ test/test_results/*/05.gene_bam/*
 test/test_results/qsub_command.list
 test/test_results/sample_shell.list
 
+simulate_fq/
+test/test_results/25B09089387/
+test/test_results/25B09089402/
+test/test_results/25B09089403/
+test/test_results/25B09089404/
+test/test_results/25B09089405/
+
+
 db/FHOD3*
 db/Clustal
 simulate_fq/*fastq
