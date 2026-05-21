@@ -1,4 +1,5 @@
 #!/usr/bin/env perl
+# -*- coding: utf-8 -*-
 
 use strict;
 use warnings;
@@ -34,28 +35,23 @@ use Getopt::Long;
 #   Only records satisfying all conditions are clustered:
 #     1. Junction_Type == Deletion_Gap
 #     2. SV_Chrom/SV_Start/SV_End are valid
-#     3. SA_MAPQ >= MIN_SA_MAPQ_FOR_CLUSTER
+#     3. SA_MAPQ >= MIN_MAPQ
 #
 #   A record belongs to the current cluster if:
 #     same SV_Chrom
-#     abs(record.SV_Start - median(cluster.SV_Start)) <= window
-#     abs(record.SV_End   - median(cluster.SV_End))   <= window
+#     abs(record.SV_Start - median(cluster.SV_Start)) <= SA_SPLIT_CLUSTER_WINDOW
+#     abs(record.SV_End   - median(cluster.SV_End))   <= SA_SPLIT_CLUSTER_WINDOW
 #
-# Config keys:
-#   SA_SPLIT_CLUSTER_WINDOW       default: 20
-#   SA_SPLIT_MIN_SUPPORT_READS    default: 2
-#
-# Internal default:
-#   MIN_SA_MAPQ_FOR_CLUSTER       default: 20
+# Config keys used:
+#   MIN_MAPQ
+#   SA_SPLIT_CLUSTER_WINDOW
+#   SA_SPLIT_MIN_SUPPORT_READS
 # ============================================================
 
 my $conf    = "";
 my $input   = "";
 my $outfile = "";
 my $help    = 0;
-
-# SA MAPQ filter is fixed in this script.
-my $MIN_SA_MAPQ_FOR_CLUSTER = 20;
 
 GetOptions(
     "conf=s"    => \$conf,
@@ -76,17 +72,26 @@ die "[ERROR] Input file not found: $input\n" unless -s $input;
 
 my %cfg = read_conf($conf);
 
+my $min_mapq = get_conf_value(
+    \%cfg,
+    "MIN_MAPQ",
+    20
+);
+
 my $cluster_window = get_conf_value(
     \%cfg,
-    ["SA_SPLIT_CLUSTER_WINDOW", "SPLIT_READ_CLUSTER_WINDOW", "CLUSTER_WINDOW"],
+    "SA_SPLIT_CLUSTER_WINDOW",
     20
 );
 
 my $min_support_reads = get_conf_value(
     \%cfg,
-    ["SA_SPLIT_MIN_SUPPORT_READS", "SPLIT_READ_MIN_SUPPORT_READS", "MIN_SUPPORT_READS"],
-    2
+    "SA_SPLIT_MIN_SUPPORT_READS",
+    5
 );
+
+die "[ERROR] MIN_MAPQ must be a non-negative integer\n"
+    unless defined $min_mapq && $min_mapq =~ /^\d+$/;
 
 die "[ERROR] SA_SPLIT_CLUSTER_WINDOW must be a non-negative integer\n"
     unless defined $cluster_window && $cluster_window =~ /^\d+$/;
@@ -106,7 +111,7 @@ my @deletion_records = grep {
     && $_->{SV_Start} =~ /^\d+$/
     && $_->{SV_End}   =~ /^\d+$/
     && $_->{SA_MAPQ}  =~ /^\d+$/
-    && $_->{SA_MAPQ} >= $MIN_SA_MAPQ_FOR_CLUSTER
+    && $_->{SA_MAPQ} >= $min_mapq
 } @records;
 
 my $deletion_gap_all = scalar(grep {
@@ -154,9 +159,9 @@ print STDERR "[INFO] Input                     : $input\n";
 print STDERR "[INFO] PASS cluster output       : $pass_cluster_out\n";
 print STDERR "[INFO] Failed cluster output     : $failed_cluster_out\n";
 print STDERR "[INFO] Supporting reads output   : $support_out\n";
+print STDERR "[INFO] MIN_MAPQ                  : $min_mapq\n";
 print STDERR "[INFO] SA_SPLIT_CLUSTER_WINDOW   : $cluster_window\n";
 print STDERR "[INFO] SA_SPLIT_MIN_SUPPORT_READS: $min_support_reads\n";
-print STDERR "[INFO] MIN_SA_MAPQ_FOR_CLUSTER   : $MIN_SA_MAPQ_FOR_CLUSTER\n";
 print STDERR "[INFO] Total input records       : " . scalar(@records) . "\n";
 print STDERR "[INFO] Deletion_Gap records      : $deletion_gap_all\n";
 print STDERR "[INFO] Filtered by SA_MAPQ       : $filtered_by_sa_mapq\n";
@@ -167,6 +172,9 @@ print STDERR "[INFO] Failed cluster number     : $fail_n\n";
 
 exit 0;
 
+# ============================================================
+# Subroutines
+# ============================================================
 
 sub usage {
     return <<"USAGE";
@@ -193,16 +201,17 @@ Derived output:
         ".clusters.tsv" -> ".supporting_reads.tsv"
 
 Config keys:
+  MIN_MAPQ
+      Minimum SA_MAPQ required for split-read clustering.
+      Default: 20
+
   SA_SPLIT_CLUSTER_WINDOW
       Maximum allowed breakpoint difference for clustering.
       Default: 20
 
   SA_SPLIT_MIN_SUPPORT_READS
       Minimum unique read names required for PASS.
-      Default: 2
-
-Internal filter:
-  SA_MAPQ >= 20
+      Default: 5
 
 Example:
   perl bin/cluster_sa_split_reads.pl \\
@@ -212,7 +221,6 @@ Example:
 
 USAGE
 }
-
 
 sub read_conf {
     my ($file) = @_;
@@ -252,19 +260,15 @@ sub read_conf {
     return %cfg;
 }
 
-
 sub get_conf_value {
-    my ($cfg_ref, $keys_ref, $default) = @_;
+    my ($cfg_ref, $key, $default) = @_;
 
-    foreach my $key (@$keys_ref) {
-        if (exists $cfg_ref->{$key} && defined $cfg_ref->{$key} && $cfg_ref->{$key} ne "") {
-            return $cfg_ref->{$key};
-        }
+    if (exists $cfg_ref->{$key} && defined $cfg_ref->{$key} && $cfg_ref->{$key} ne "") {
+        return $cfg_ref->{$key};
     }
 
     return $default;
 }
-
 
 sub derive_failed_clusters_outfile {
     my ($outfile) = @_;
@@ -284,7 +288,6 @@ sub derive_failed_clusters_outfile {
     return $failed_out;
 }
 
-
 sub derive_supporting_reads_outfile {
     my ($outfile) = @_;
 
@@ -302,7 +305,6 @@ sub derive_supporting_reads_outfile {
 
     return $support_out;
 }
-
 
 sub read_sa_split_records {
     my ($file) = @_;
@@ -387,7 +389,6 @@ sub read_sa_split_records {
     return @records;
 }
 
-
 sub cluster_records {
     my %args = @_;
 
@@ -455,7 +456,6 @@ sub cluster_records {
     return @clusters;
 }
 
-
 sub build_cluster {
     my ($records_ref) = @_;
 
@@ -514,7 +514,6 @@ sub build_cluster {
     };
 }
 
-
 sub classify_clusters {
     my %args = @_;
 
@@ -534,7 +533,6 @@ sub classify_clusters {
         }
     }
 }
-
 
 sub write_cluster_summary {
     my %args = @_;
@@ -594,7 +592,6 @@ sub write_cluster_summary {
 
     close $out_fh;
 }
-
 
 sub write_supporting_reads {
     my %args = @_;
@@ -662,7 +659,6 @@ sub write_supporting_reads {
     close $out_fh;
 }
 
-
 sub median {
     my @v = @_;
 
@@ -679,7 +675,6 @@ sub median {
     }
 }
 
-
 sub int_median {
     my @v = @_;
 
@@ -688,7 +683,6 @@ sub int_median {
 
     return int($m + 0.5);
 }
-
 
 sub min {
     my @v = @_;
@@ -704,7 +698,6 @@ sub min {
     return $m;
 }
 
-
 sub max {
     my @v = @_;
 
@@ -718,7 +711,6 @@ sub max {
 
     return $m;
 }
-
 
 sub format_count_hash {
     my ($hash_ref) = @_;
