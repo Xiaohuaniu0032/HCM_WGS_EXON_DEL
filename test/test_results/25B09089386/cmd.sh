@@ -2,3 +2,6 @@ perl /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/bin/extract_sa_split_reads.pl
 
 perl /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/bin/cluster_sa_split_reads.pl --conf /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/conf/hcm_exondel.example.conf --input /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/02.split_reads/25B09089386.split_reads.tsv --outfile /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/02.split_reads/25B09089386.split_reads.clusters.tsv
 
+
+'/usr/bin/perl' '/ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/bin/merge_evidence.pl' --config '/ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/conf/hcm_exondel.example.conf' --sample '25B09089386' --depth '/ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.tsv' --split '/ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/02.split_reads/25B09089386.split_reads.clusters.tsv' --discordant '/ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/03.discordant_reads/25B09089386.discordant_reads.tsv' --out '/ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/04.candidates/25B09089386.merged_candidates.tsv' > '/ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/00.log/04.merge_evidence.log' 2>&1
+

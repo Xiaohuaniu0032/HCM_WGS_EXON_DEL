@@ -6,17 +6,10 @@
 [INFO] Output file sample prefix : 25B09089386
 [INFO] Exon TXT                  : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/db/exon_annotation_bed/RefSeq_MANE_Select.exon.txt
 [INFO] Min exon overlap fraction : 0.20
-[INFO] Annotate evidence level   : High
-[INFO] Annotate all candidates   : 0
-[INFO] --out anchor              : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/06.report/25B09089386.annotated_candidates.tsv
-[INFO] Output directory          : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/06.report
-[INFO] Main output               : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/06.report/25B09089386.Evidence_Level.High.tsv
-[INFO] Other evidence output     : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/06.report/25B09089386.Evidence_Level.Other.tsv
+[INFO] Coordinate priority       : Best > Merged > Core
+[INFO] Output file               : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/06.report/25B09089386.annotated_candidates.tsv
 [INFO] Candidate annotation finished
-[INFO] Total candidates        : 73
-[INFO] Main output candidates  : 2
-[INFO] Other output candidates : 71
-[INFO] Annotated candidates    : 2
-[INFO] Not annotated           : 0
-[INFO] Main output             : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/06.report/25B09089386.Evidence_Level.High.tsv
-[INFO] Other evidence output   : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/06.report/25B09089386.Evidence_Level.Other.tsv
+[INFO] Total candidates     : 2
+[INFO] Annotated candidates : 1
+[INFO] Not annotated        : 1
+[INFO] Output file          : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/06.report/25B09089386.annotated_candidates.tsv

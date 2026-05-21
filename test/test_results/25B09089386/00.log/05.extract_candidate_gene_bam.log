@@ -7,29 +7,8 @@
 [INFO] Output dir    : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam
 [INFO] Samtools      : /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools
 [INFO] Flank         : 0
-[INFO] Candidate genes found: 17
-[INFO] Genes matched in gene TXT: 17 / 17
-[INFO] Extracting gene: ACTN2
-[INFO] Regions       : chr1:236849799-236927931
-[INFO] Output BAM    : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/ACTN2.bam
-[CMD] /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools view -b -o /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/ACTN2.bam /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam chr1:236849799-236927931
-[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
-[CMD] /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools index /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/ACTN2.bam
-[INFO] Finished gene: ACTN2
-[INFO] Extracting gene: CACNA1C
-[INFO] Regions       : chr12:2162153-2807116
-[INFO] Output BAM    : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/CACNA1C.bam
-[CMD] /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools view -b -o /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/CACNA1C.bam /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam chr12:2162153-2807116
-[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
-[CMD] /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools index /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/CACNA1C.bam
-[INFO] Finished gene: CACNA1C
-[INFO] Extracting gene: CACNB2
-[INFO] Regions       : chr10:18429353-18832486
-[INFO] Output BAM    : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/CACNB2.bam
-[CMD] /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools view -b -o /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/CACNB2.bam /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam chr10:18429353-18832486
-[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
-[CMD] /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools index /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/CACNB2.bam
-[INFO] Finished gene: CACNB2
+[INFO] Candidate genes found: 2
+[INFO] Genes matched in gene TXT: 2 / 2
 [INFO] Extracting gene: FHOD3
 [INFO] Regions       : chr18:33877676-34360183
 [INFO] Output BAM    : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/FHOD3.bam
@@ -37,48 +16,6 @@
 [W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [CMD] /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools index /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/FHOD3.bam
 [INFO] Finished gene: FHOD3
-[INFO] Extracting gene: JPH2
-[INFO] Regions       : chr20:42735230-42815828
-[INFO] Output BAM    : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/JPH2.bam
-[CMD] /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools view -b -o /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/JPH2.bam /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam chr20:42735230-42815828
-[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
-[CMD] /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools index /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/JPH2.bam
-[INFO] Finished gene: JPH2
-[INFO] Extracting gene: KCNQ1
-[INFO] Regions       : chr11:2466238-2870335
-[INFO] Output BAM    : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/KCNQ1.bam
-[CMD] /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools view -b -o /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/KCNQ1.bam /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam chr11:2466238-2870335
-[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
-[CMD] /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools index /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/KCNQ1.bam
-[INFO] Finished gene: KCNQ1
-[INFO] Extracting gene: KLHL24
-[INFO] Regions       : chr3:183353411-183402307
-[INFO] Output BAM    : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/KLHL24.bam
-[CMD] /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools view -b -o /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/KLHL24.bam /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam chr3:183353411-183402307
-[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
-[CMD] /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools index /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/KLHL24.bam
-[INFO] Finished gene: KLHL24
-[INFO] Extracting gene: MYH6
-[INFO] Regions       : chr14:23851196-23877482
-[INFO] Output BAM    : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/MYH6.bam
-[CMD] /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools view -b -o /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/MYH6.bam /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam chr14:23851196-23877482
-[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
-[CMD] /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools index /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/MYH6.bam
-[INFO] Finished gene: MYH6
-[INFO] Extracting gene: MYPN
-[INFO] Regions       : chr10:69869245-69971774
-[INFO] Output BAM    : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/MYPN.bam
-[CMD] /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools view -b -o /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/MYPN.bam /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam chr10:69869245-69971774
-[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
-[CMD] /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools index /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/MYPN.bam
-[INFO] Finished gene: MYPN
-[INFO] Extracting gene: OBSCN
-[INFO] Regions       : chr1:228395745-228566577
-[INFO] Output BAM    : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/OBSCN.bam
-[CMD] /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools view -b -o /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/OBSCN.bam /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam chr1:228395745-228566577
-[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
-[CMD] /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools index /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/OBSCN.bam
-[INFO] Finished gene: OBSCN
 [INFO] Extracting gene: PDLIM3
 [INFO] Regions       : chr4:186421814-186456661
 [INFO] Output BAM    : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/PDLIM3.bam
@@ -86,46 +23,4 @@
 [W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [CMD] /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools index /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/PDLIM3.bam
 [INFO] Finished gene: PDLIM3
-[INFO] Extracting gene: PRKAG2
-[INFO] Regions       : chr7:151253213-151574200
-[INFO] Output BAM    : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/PRKAG2.bam
-[CMD] /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools view -b -o /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/PRKAG2.bam /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam chr7:151253213-151574200
-[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
-[CMD] /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools index /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/PRKAG2.bam
-[INFO] Finished gene: PRKAG2
-[INFO] Extracting gene: RBM20
-[INFO] Regions       : chr10:112404094-112599226
-[INFO] Output BAM    : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/RBM20.bam
-[CMD] /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools view -b -o /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/RBM20.bam /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam chr10:112404094-112599226
-[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
-[CMD] /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools index /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/RBM20.bam
-[INFO] Finished gene: RBM20
-[INFO] Extracting gene: RPS6KB1
-[INFO] Regions       : chr17:57970482-58027935
-[INFO] Output BAM    : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/RPS6KB1.bam
-[CMD] /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools view -b -o /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/RPS6KB1.bam /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam chr17:57970482-58027935
-[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
-[CMD] /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools index /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/RPS6KB1.bam
-[INFO] Finished gene: RPS6KB1
-[INFO] Extracting gene: RYR2
-[INFO] Regions       : chr1:237205484-237997288
-[INFO] Output BAM    : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/RYR2.bam
-[CMD] /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools view -b -o /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/RYR2.bam /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam chr1:237205484-237997288
-[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
-[CMD] /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools index /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/RYR2.bam
-[INFO] Finished gene: RYR2
-[INFO] Extracting gene: TTN
-[INFO] Regions       : chr2:179390716-179672150
-[INFO] Output BAM    : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/TTN.bam
-[CMD] /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools view -b -o /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/TTN.bam /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam chr2:179390716-179672150
-[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
-[CMD] /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools index /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/TTN.bam
-[INFO] Finished gene: TTN
-[INFO] Extracting gene: VCL
-[INFO] Regions       : chr10:75757874-75879927
-[INFO] Output BAM    : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/VCL.bam
-[CMD] /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools view -b -o /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/VCL.bam /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam chr10:75757874-75879927
-[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
-[CMD] /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools index /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/05.gene_bam/VCL.bam
-[INFO] Finished gene: VCL
 [INFO] All done.

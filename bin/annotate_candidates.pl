@@ -6,49 +6,109 @@
 #   annotate_candidates.pl
 #
 # Purpose:
-#   Annotate candidate exon-level deletion regions using MANE
-#   RefSeq exon annotation and generate compact review-friendly
-#   report files.
+#   Annotate high-confidence exon-level deletion candidates using
+#   MANE RefSeq exon annotation.
 #
 # Main features:
-#   1. Read candidate deletions from merged_candidates.tsv.
+#   1. Read final candidates from merged_candidates.tsv.
 #   2. Read MANE exon annotation from REFSEQ_MANE_SELECT_EXON_TXT
 #      configured in hcm_exondel.example.conf.
-#   3. Annotate candidate regions with affected gene, transcript,
-#      and exon information.
-#   4. Output only key review columns instead of all intermediate
-#      columns.
-#   5. Split output by Evidence_Level:
-#        SAMPLE.Evidence_Level.High.tsv
-#        SAMPLE.Evidence_Level.Other.tsv
-#      The target evidence level is controlled by:
-#        ANNOTATE_EVIDENCE_LEVEL=High
-#   6. Keep --out parameter for compatibility with the main pipeline.
-#      The script uses dirname(--out) as the output directory.
-#   7. Sample name is taken from the first column of the input file.
+#   3. Annotate each candidate with affected gene, transcript and exon
+#      information.
+#   4. Write one compact review-friendly TSV file specified by --out.
+#
+#
+# Important:
+#
+#   This script is designed for the new merge_evidence.pl output.
+#
+#   The input merged_candidates.tsv is assumed to contain final
+#   high-confidence candidates only, for example candidates with:
+#
+#     Evidence_Level = High
+#     Evidence_Count = 3
+#     Evidence_Types = Depth,Split,Discordant
+#
+#   Therefore, this script no longer uses:
+#
+#     ANNOTATE_EVIDENCE_LEVEL
+#
+#   It no longer splits output into:
+#
+#     SAMPLE.Evidence_Level.High.tsv
+#     SAMPLE.Evidence_Level.Other.tsv
+#
+#   All input rows are annotated and written directly to --out.
+#
+#
+# Coordinate selection logic:
+#
+#   The new merged_candidates.tsv contains three coordinate systems:
+#
+#     1) Best_Start / Best_End
+#
+#        Recommended candidate boundary for downstream annotation and
+#        reporting. This is selected by merge_evidence.pl using priority:
+#
+#          Split > Discordant > Depth
+#
+#        This is the preferred coordinate for exon annotation.
+#
+#
+#     2) Merged_Start / Merged_End
+#
+#        Outer boundary of all overlapping evidence intervals.
+#        This is usually the widest possible event range.
+#        It is used only when Best_Start / Best_End are unavailable.
+#
+#
+#     3) Core_Start / Core_End
+#
+#        Conservative overlap region supported by evidence types.
+#        For three-evidence candidates, this is the overlap of
+#        Depth + Split + Discordant.
+#        It may be shorter than the real deletion.
+#        It is used only when both Best and Merged coordinates are unavailable.
+#
+#
+#   Coordinate priority:
+#
+#     Priority 1:
+#       Chrom + Best_Start + Best_End
+#
+#     Priority 2:
+#       Chrom + Merged_Start + Merged_End
+#
+#     Priority 3:
+#       Chrom + Core_Start + Core_End
+#
+#   The selected coordinate source is written to output column:
+#
+#     Coordinate_Source
+#
+#   The output columns Start, End, Candidate_Region and Size_bp are based
+#   on the selected coordinate system.
+#
 #
 # Input:
 #   --config  hcm_exondel config file
 #   --input   merged_candidates.tsv
-#   --out     output anchor file
-#
-# Important:
-#   --out is only used as an output anchor for compatibility.
-#   The actual output filenames are automatically generated as:
-#     SAMPLE.Evidence_Level.<level>.tsv
-#     SAMPLE.Evidence_Level.Other.tsv
+#   --out     annotated_candidates.tsv
 #
 # Required input columns:
 #   First column: sample name
 #   Chrom
-#   Start
-#   End
-#   Evidence_Level
+#
+# Required coordinate columns:
+#   At least one of the following coordinate sets must exist:
+#
+#     Best_Start + Best_End
+#     Merged_Start + Merged_End
+#     Core_Start + Core_End
 #
 # Config parameters used:
 #   REFSEQ_MANE_SELECT_EXON_TXT
 #   MIN_EXON_OVERLAP_FRACTION
-#   ANNOTATE_EVIDENCE_LEVEL
 #
 # Expected exon TXT format:
 #   Gene    Transcript    Exon    Chrom    Start    End    Strand
@@ -61,10 +121,6 @@
 #     --config conf/hcm_exondel.example.conf \
 #     --input  test/test_results/25B09089386/04.candidates/25B09089386.merged_candidates.tsv \
 #     --out    test/test_results/25B09089386/06.report/25B09089386.annotated_candidates.tsv
-#
-# Output example:
-#   test/test_results/25B09089386/06.report/25B09089386.Evidence_Level.High.tsv
-#   test/test_results/25B09089386/06.report/25B09089386.Evidence_Level.Other.tsv
 # ============================================================
 
 use strict;
@@ -100,8 +156,11 @@ die usage() unless $config && $input && $out;
 $config = abs_path($config);
 $input  = abs_path($input);
 
-die "[ERROR] Config file not found: $config\n" unless defined $config && -s $config;
-die "[ERROR] Input candidate file not found: $input\n" unless defined $input && -s $input;
+die "[ERROR] Config file not found: $config\n"
+    unless defined $config && -s $config;
+
+die "[ERROR] Input candidate file not found: $input\n"
+    unless defined $input && -s $input;
 
 # ============================================================
 # Read config
@@ -130,25 +189,6 @@ die "[ERROR] MIN_EXON_OVERLAP_FRACTION must be numeric: $min_exon_overlap_fracti
 die "[ERROR] MIN_EXON_OVERLAP_FRACTION must be > 0 and <= 1: $min_exon_overlap_fraction\n"
     unless $min_exon_overlap_fraction > 0 && $min_exon_overlap_fraction <= 1;
 
-my $annotate_evidence_level = get_conf_value(
-    \%CONF,
-    "ANNOTATE_EVIDENCE_LEVEL",
-    "High"
-);
-
-$annotate_evidence_level =~ s/^\s+//;
-$annotate_evidence_level =~ s/\s+$//;
-
-die "[ERROR] ANNOTATE_EVIDENCE_LEVEL is empty\n"
-    if !defined $annotate_evidence_level || $annotate_evidence_level eq "";
-
-my $annotate_all = 0;
-
-if (lc($annotate_evidence_level) eq "all") {
-    $annotate_all = 1;
-    $annotate_evidence_level = "All";
-}
-
 # ============================================================
 # Step 1. Read candidate file
 # ============================================================
@@ -174,36 +214,22 @@ my $file_sample = get_first_column_sample_name(
 
 $file_sample = sanitize_filename($file_sample);
 
-foreach my $required (qw(Chrom Start End)) {
-    die "[ERROR] Required column '$required' not found in input: $input\n"
-        unless exists $idx{$required};
-}
+die "[ERROR] Required column 'Chrom' not found in input: $input\n"
+    unless exists $idx{Chrom};
 
-if (!$annotate_all) {
-    die "[ERROR] Required column 'Evidence_Level' not found in input: $input\n"
-        unless exists $idx{Evidence_Level};
-}
+my @coord_sets = get_supported_coordinate_sets(\%idx);
+
+die "[ERROR] No supported coordinate columns found in input: $input\n"
+  . "        Required one of: Best_Start/Best_End, Merged_Start/Merged_End, Core_Start/Core_End\n"
+    unless @coord_sets;
 
 # ============================================================
-# Step 2. Prepare output files
+# Step 2. Prepare output file
 # ============================================================
 
 my $outdir = dirname($out);
 $outdir = resolve_output_dir($outdir);
 make_path($outdir) unless -d $outdir;
-
-my $safe_level = sanitize_filename($annotate_evidence_level);
-
-my $main_out;
-my $other_out;
-
-if ($annotate_all) {
-    $main_out = "$outdir/$file_sample.Evidence_Level.All.tsv";
-}
-else {
-    $main_out  = "$outdir/$file_sample.Evidence_Level.$safe_level.tsv";
-    $other_out = "$outdir/$file_sample.Evidence_Level.Other.tsv";
-}
 
 print "[INFO] Candidate annotation started\n";
 print "[INFO] Config                    : $config\n";
@@ -213,12 +239,8 @@ print "[INFO] Sample column             : $sample_col\n";
 print "[INFO] Output file sample prefix : $file_sample\n";
 print "[INFO] Exon TXT                  : $exon_txt\n";
 print "[INFO] Min exon overlap fraction : $min_exon_overlap_fraction\n";
-print "[INFO] Annotate evidence level   : $annotate_evidence_level\n";
-print "[INFO] Annotate all candidates   : $annotate_all\n";
-print "[INFO] --out anchor              : $out\n";
-print "[INFO] Output directory          : $outdir\n";
-print "[INFO] Main output               : $main_out\n";
-print "[INFO] Other evidence output     : $other_out\n" unless $annotate_all;
+print "[INFO] Coordinate priority       : ", join(" > ", map { $_->{mode} } @coord_sets), "\n";
+print "[INFO] Output file               : $out\n";
 
 # ============================================================
 # Step 3. Read MANE exon annotation
@@ -245,7 +267,7 @@ foreach my $chr (keys %exons_by_chr) {
 }
 
 # ============================================================
-# Step 4. Open output files
+# Step 4. Open output file
 # ============================================================
 
 my @compact_header = qw(
@@ -255,6 +277,7 @@ my @compact_header = qw(
     End
     Candidate_Region
     Size_bp
+    Coordinate_Source
     Scan_Source
     Evidence_Level
     Evidence_Types
@@ -272,27 +295,16 @@ my @compact_header = qw(
     Exon_Overlap_Detail
 );
 
-open my $main_fh, ">", $main_out
-    or die "[ERROR] Cannot write main output file: $main_out\n";
+open my $out_fh, ">", $out
+    or die "[ERROR] Cannot write output file: $out\n";
 
-print $main_fh join("\t", @compact_header) . "\n";
-
-my $other_fh;
-
-if (!$annotate_all) {
-    open $other_fh, ">", $other_out
-        or die "[ERROR] Cannot write other evidence output file: $other_out\n";
-
-    print $other_fh join("\t", @compact_header) . "\n";
-}
+print $out_fh join("\t", @compact_header) . "\n";
 
 # ============================================================
-# Step 5. Annotate candidates
+# Step 5. Annotate all candidates
 # ============================================================
 
 my $total_count     = 0;
-my $main_count      = 0;
-my $other_count     = 0;
 my $annotated_count = 0;
 my $not_annotated   = 0;
 
@@ -301,47 +313,18 @@ foreach my $row (@rows) {
 
     my %r = row_hash($row, \@header, \%idx);
 
-    my $chr   = get_value(\%r, "Chrom");
-    my $start = get_value(\%r, "Start");
-    my $end   = get_value(\%r, "End");
+    my ($coord_source, $chr, $start, $end) = select_candidate_coordinate(
+        \%r,
+        \@coord_sets,
+        $total_count
+    );
 
-    if (!defined $chr || $chr eq "" || $chr eq "NA") {
-        die "[ERROR] Empty Chrom value at candidate row $total_count\n";
-    }
+    $r{__ANNOT_CHROM}  = $chr;
+    $r{__ANNOT_START}  = $start;
+    $r{__ANNOT_END}    = $end;
+    $r{__COORD_SOURCE} = $coord_source;
 
-    if (!is_integer($start) || !is_integer($end)) {
-        die "[ERROR] Invalid Start/End at candidate row $total_count: Start=$start End=$end\n";
-    }
-
-    if ($start > $end) {
-        ($start, $end) = ($end, $start);
-        $r{Start} = $start;
-        $r{End}   = $end;
-    }
-
-    my $level = get_value(\%r, "Evidence_Level");
-
-    my $annotation;
-
-    if (!$annotate_all && $level ne $annotate_evidence_level) {
-        $other_count++;
-
-        $annotation = {
-            gene                       => "NA",
-            transcript                 => "NA",
-            affected_exons             => "NA",
-            overlap_exon_count         => 0,
-            fully_covered_exons        => "NA",
-            partially_overlapped_exons => "NA",
-            exon_overlap_detail        => "Evidence_Level=$level; main_output_required=$annotate_evidence_level",
-            annotation_status          => "Other_Evidence_Level",
-        };
-
-        print_compact_output_row($other_fh, \%r, $annotation, $sample_col);
-        next;
-    }
-
-    $annotation = annotate_one_candidate(
+    my $annotation = annotate_one_candidate(
         chrom                     => $chr,
         start                     => $start,
         end                       => $end,
@@ -356,23 +339,82 @@ foreach my $row (@rows) {
         $not_annotated++;
     }
 
-    $main_count++;
-    print_compact_output_row($main_fh, \%r, $annotation, $sample_col);
+    print_compact_output_row($out_fh, \%r, $annotation, $sample_col);
 }
 
-close $main_fh;
-close $other_fh if !$annotate_all;
+close $out_fh;
 
 print "[INFO] Candidate annotation finished\n";
-print "[INFO] Total candidates        : $total_count\n";
-print "[INFO] Main output candidates  : $main_count\n";
-print "[INFO] Other output candidates : $other_count\n" unless $annotate_all;
-print "[INFO] Annotated candidates    : $annotated_count\n";
-print "[INFO] Not annotated           : $not_annotated\n";
-print "[INFO] Main output             : $main_out\n";
-print "[INFO] Other evidence output   : $other_out\n" unless $annotate_all;
+print "[INFO] Total candidates     : $total_count\n";
+print "[INFO] Annotated candidates : $annotated_count\n";
+print "[INFO] Not annotated        : $not_annotated\n";
+print "[INFO] Output file          : $out\n";
 
 exit 0;
+
+# ============================================================
+# Coordinate selection functions
+# ============================================================
+
+sub get_supported_coordinate_sets {
+    my ($idx_ref) = @_;
+
+    my @all = (
+        {
+            mode  => "Best",
+            chrom => "Chrom",
+            start => "Best_Start",
+            end   => "Best_End",
+        },
+        {
+            mode  => "Merged",
+            chrom => "Chrom",
+            start => "Merged_Start",
+            end   => "Merged_End",
+        },
+        {
+            mode  => "Core",
+            chrom => "Chrom",
+            start => "Core_Start",
+            end   => "Core_End",
+        },
+    );
+
+    my @supported;
+
+    foreach my $set (@all) {
+        next unless exists $idx_ref->{ $set->{chrom} };
+        next unless exists $idx_ref->{ $set->{start} };
+        next unless exists $idx_ref->{ $set->{end} };
+
+        push @supported, $set;
+    }
+
+    return @supported;
+}
+
+
+sub select_candidate_coordinate {
+    my ($row_hash_ref, $coord_sets_ref, $row_no) = @_;
+
+    foreach my $set (@$coord_sets_ref) {
+        my $chr   = get_value($row_hash_ref, $set->{chrom});
+        my $start = get_value($row_hash_ref, $set->{start});
+        my $end   = get_value($row_hash_ref, $set->{end});
+
+        next if !defined $chr || $chr eq "" || $chr eq "NA";
+        next unless is_integer($start);
+        next unless is_integer($end);
+
+        if ($start > $end) {
+            ($start, $end) = ($end, $start);
+        }
+
+        return ($set->{mode}, $chr, $start, $end);
+    }
+
+    die "[ERROR] No valid coordinate found at candidate row $row_no\n";
+}
 
 # ============================================================
 # Annotation functions
@@ -470,6 +512,7 @@ sub annotate_one_candidate {
     };
 }
 
+
 sub empty_annotation {
     my ($reason) = @_;
 
@@ -484,6 +527,7 @@ sub empty_annotation {
         annotation_status          => "Not_annotated",
     };
 }
+
 
 sub overlap_length {
     my ($s1, $e1, $s2, $e2) = @_;
@@ -516,7 +560,7 @@ sub read_exon_txt {
     my @header = split /\t/, $header, -1;
     my %idx    = header_index(@header);
 
-    foreach my $required (qw(Gene Transcript Exon Chrom Start End Strand)) {
+    foreach my $required (qw/Gene Transcript Exon Chrom Start End Strand/) {
         die "[ERROR] Required column '$required' not found in exon TXT: $file\n"
             unless exists $idx{$required};
     }
@@ -579,21 +623,19 @@ sub print_compact_output_row {
     my $sample_name = get_value($row_hash_ref, $sample_col);
     $sample_name = "NA" if !defined $sample_name || $sample_name eq "";
 
-    my $chrom = get_value($row_hash_ref, "Chrom");
-    my $start = get_value($row_hash_ref, "Start");
-    my $end   = get_value($row_hash_ref, "End");
+    my $chrom = get_value($row_hash_ref, "__ANNOT_CHROM");
+    my $start = get_value($row_hash_ref, "__ANNOT_START");
+    my $end   = get_value($row_hash_ref, "__ANNOT_END");
+
+    my $coordinate_source = get_value($row_hash_ref, "__COORD_SOURCE");
 
     my $candidate_region = "NA";
     if ($chrom ne "NA" && is_integer($start) && is_integer($end)) {
         $candidate_region = "$chrom:$start-$end";
     }
 
-    my $size_bp = first_existing_value(
-        $row_hash_ref,
-        qw(Size_bp Size Length Length_bp Candidate_Size Candidate_Size_bp Del_Size)
-    );
-
-    if ($size_bp eq "NA" && is_integer($start) && is_integer($end)) {
+    my $size_bp = "NA";
+    if (is_integer($start) && is_integer($end)) {
         my $s = $start;
         my $e = $end;
         ($s, $e) = ($e, $s) if $s > $e;
@@ -602,34 +644,51 @@ sub print_compact_output_row {
 
     my $scan_source = first_existing_value(
         $row_hash_ref,
-        qw(Region Scan_Source Candidate_Source Source)
+        qw/Scan_Source Candidate_Source Source/
     );
+
+    if ($coordinate_source ne "NA") {
+        my $best_evidence = first_existing_value(
+            $row_hash_ref,
+            qw/Best_Evidence/
+        );
+
+        if ($best_evidence ne "NA" && $coordinate_source eq "Best") {
+            $scan_source = "$coordinate_source;Best_Evidence=$best_evidence";
+        }
+        elsif ($scan_source eq "NA") {
+            $scan_source = $coordinate_source;
+        }
+        else {
+            $scan_source = "$coordinate_source;$scan_source";
+        }
+    }
 
     my $evidence_level = get_value($row_hash_ref, "Evidence_Level");
 
     my $evidence_types = first_existing_value(
         $row_hash_ref,
-        qw(Evidence_Types Evidence_Type Evidence_Sources Support_Types Support_Type Evidence)
+        qw/Evidence_Types Evidence_Type Evidence_Sources Support_Types Support_Type Evidence/
     );
 
     my $evidence_count = first_existing_value(
         $row_hash_ref,
-        qw(Evidence_Count Support_Count Num_Evidence Evidence_Type_Count)
+        qw/Evidence_Count Support_Count Num_Evidence Evidence_Type_Count/
     );
 
     my $depth_support = first_existing_value(
         $row_hash_ref,
-        qw(Depth_Support Has_Depth Depth_Evidence Depth_Candidate Depth)
+        qw/Depth_Support Has_Depth Depth_Evidence Depth_Candidate Depth/
     );
 
     my $split_read_support = first_existing_value(
         $row_hash_ref,
-        qw(Split_Read_Support Has_Split_Read Split_Evidence Split_Read_Count Split_Reads Split_Read)
+        qw/Split_Read_Support Has_Split_Read Split_Evidence Split_Read_Count Split_Reads Split_Read/
     );
 
     my $discordant_read_support = first_existing_value(
         $row_hash_ref,
-        qw(Discordant_Read_Support Has_Discordant_Read Discordant_Evidence Discordant_Read_Count Discordant_Reads Discordant_Pair_Support Discordant_Pair)
+        qw/Discordant_Read_Support Has_Discordant_Read Discordant_Evidence Discordant_Read_Count Discordant_Reads Discordant_Pair_Support Discordant_Pair/
     );
 
     my @out = (
@@ -639,6 +698,7 @@ sub print_compact_output_row {
         $end,
         $candidate_region,
         $size_bp,
+        $coordinate_source,
         $scan_source,
         $evidence_level,
         $evidence_types,
@@ -693,6 +753,7 @@ sub read_tsv {
     return (\@header, \@rows);
 }
 
+
 sub header_index {
     my (@header) = @_;
 
@@ -704,6 +765,7 @@ sub header_index {
 
     return %idx;
 }
+
 
 sub row_hash {
     my ($row_ref, $header_ref, $idx_ref) = @_;
@@ -721,6 +783,7 @@ sub row_hash {
     return %r;
 }
 
+
 sub get_field {
     my ($fields_ref, $idx_ref, $key) = @_;
 
@@ -728,6 +791,7 @@ sub get_field {
 
     return defined $fields_ref->[$i] ? $fields_ref->[$i] : "";
 }
+
 
 sub get_value {
     my ($row_hash_ref, $key) = @_;
@@ -743,6 +807,7 @@ sub get_value {
     return "NA";
 }
 
+
 sub first_existing_value {
     my ($row_hash_ref, @keys) = @_;
 
@@ -751,6 +816,7 @@ sub first_existing_value {
             exists $row_hash_ref->{$key}
             && defined $row_hash_ref->{$key}
             && $row_hash_ref->{$key} ne ""
+            && $row_hash_ref->{$key} ne "NA"
         ) {
             return $row_hash_ref->{$key};
         }
@@ -758,6 +824,7 @@ sub first_existing_value {
 
     return "NA";
 }
+
 
 sub get_first_column_sample_name {
     my ($rows_ref, $sample_col, $header_ref, $idx_ref) = @_;
@@ -832,6 +899,7 @@ sub read_config {
     return %conf;
 }
 
+
 sub get_conf_required {
     my ($conf_ref, $key) = @_;
 
@@ -840,6 +908,7 @@ sub get_conf_required {
 
     return $conf_ref->{$key};
 }
+
 
 sub get_conf_value {
     my ($conf_ref, $key, $default) = @_;
@@ -868,6 +937,7 @@ sub guess_project_root {
     return dirname($config_file);
 }
 
+
 sub resolve_path {
     my ($path, $project_root, $config_dir) = @_;
 
@@ -888,6 +958,7 @@ sub resolve_path {
 
     return $p1;
 }
+
 
 sub resolve_output_dir {
     my ($dir) = @_;
@@ -944,6 +1015,7 @@ sub sanitize_filename {
     return $x;
 }
 
+
 sub choose_most_frequent_key {
     my (%hash) = @_;
 
@@ -956,6 +1028,7 @@ sub choose_most_frequent_key {
 
     return $sorted[0];
 }
+
 
 sub unique {
     my @x = @_;
@@ -974,17 +1047,20 @@ sub unique {
     return @u;
 }
 
+
 sub is_integer {
     my ($x) = @_;
 
     return defined $x && $x =~ /^\d+$/;
 }
 
+
 sub is_number {
     my ($x) = @_;
 
     return defined $x && $x =~ /^-?(?:\d+\.?\d*|\.\d+)$/;
 }
+
 
 sub usage {
     return <<"USAGE";
@@ -995,44 +1071,22 @@ Usage:
     --input  test_results/SAMPLE/04.candidates/SAMPLE.merged_candidates.tsv \\
     --out    test_results/SAMPLE/06.report/SAMPLE.annotated_candidates.tsv
 
-Note:
-  --out is kept for compatibility with the main pipeline.
-  The script uses dirname(--out) as the output directory.
+Purpose:
+  Annotate all candidates in merged_candidates.tsv.
 
-Sample name:
-  The sample name is taken from the first column of the input file.
-  The first data row is used as the output file prefix.
-  The Sample column in output is also taken from the first column of each input row.
+Note:
+  The script does not use ANNOTATE_EVIDENCE_LEVEL.
+  It does not split High/Other outputs.
+  All input rows are annotated and written directly to --out.
+
+Coordinate priority:
+  1. Chrom + Best_Start + Best_End
+  2. Chrom + Merged_Start + Merged_End
+  3. Chrom + Core_Start + Core_End
 
 Config parameters used:
   REFSEQ_MANE_SELECT_EXON_TXT
   MIN_EXON_OVERLAP_FRACTION
-  ANNOTATE_EVIDENCE_LEVEL
-
-Recommended config:
-  ANNOTATE_EVIDENCE_LEVEL=High
-
-Supported ANNOTATE_EVIDENCE_LEVEL values:
-  High
-  Medium
-  Low
-  All
-
-Output files:
-  If ANNOTATE_EVIDENCE_LEVEL=High:
-    SAMPLE.Evidence_Level.High.tsv
-    SAMPLE.Evidence_Level.Other.tsv
-
-  If ANNOTATE_EVIDENCE_LEVEL=Medium:
-    SAMPLE.Evidence_Level.Medium.tsv
-    SAMPLE.Evidence_Level.Other.tsv
-
-  If ANNOTATE_EVIDENCE_LEVEL=Low:
-    SAMPLE.Evidence_Level.Low.tsv
-    SAMPLE.Evidence_Level.Other.tsv
-
-  If ANNOTATE_EVIDENCE_LEVEL=All:
-    SAMPLE.Evidence_Level.All.tsv
 
 Compact output columns:
   Sample
@@ -1041,6 +1095,7 @@ Compact output columns:
   End
   Candidate_Region
   Size_bp
+  Coordinate_Source
   Scan_Source
   Evidence_Level
   Evidence_Types
@@ -1062,4 +1117,5 @@ Expected exon TXT format:
 
 USAGE
 }
+
 
