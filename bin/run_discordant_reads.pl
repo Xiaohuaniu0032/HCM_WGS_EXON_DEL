@@ -1,5 +1,6 @@
 #!/usr/bin/env perl
 # -*- coding: utf-8 -*-
+
 use strict;
 use warnings;
 use Getopt::Long;
@@ -12,18 +13,24 @@ use Cwd qw(abs_path);
 #
 # Discordant read-pair screening from coordinate-sorted WGS BAM.
 #
-# Optimized according to conf/hcm_exondel.example.conf:
+# Function:
+#   Detect deletion-like discordant read-pair signals from target
+#   gene regions.
+#
+# Main design:
 #   1. Target regions are read from REFSEQ_MANE_SELECT_GENE_TXT.
 #   2. All TXT interval coordinates are 1-based closed.
 #   3. No BED file is required.
-#   4. TARGET_REGION_FLANK is applied internally when SCAN_WHOLE_BAM=0.
-#   5. MIN_DISCORDANT_MAPQ is used for discordant read-pair filtering,
-#      with fallback to MIN_MAPQ.
-#   6. Cluster filtering only uses MIN_DISCORDANT_READS.
-#      MIN_DISCORDANT_CANDIDATE_SIZE and MAX_DISCORDANT_CANDIDATE_SIZE
-#      are intentionally not used.
-#   7. Relative paths in config such as db/... are resolved against
-#      the project root inferred from the config path.
+#   4. TARGET_REGION_FLANK is applied internally to target regions.
+#   5. ANALYZE_CORE_GENES_ONLY controls target gene selection:
+#        1: scan only genes in HCM_CORE_GENE_LIST
+#        0: scan all genes in REFSEQ_MANE_SELECT_GENE_TXT
+#   6. Whole BAM scanning is not supported in this version.
+#   7. MIN_MAPQ is used as the global MAPQ filter.
+#   8. EXCLUDE_DUPLICATES is used as the global duplicate filter.
+#   9. MIN_DISCORDANT_INSERT_SIZE is retained as a discordant-specific
+#      insert-size threshold.
+#  10. Cluster filtering only uses MIN_DISCORDANT_READS.
 #
 # Required command-line arguments:
 #   --config
@@ -31,18 +38,19 @@ use Cwd qw(abs_path);
 #   --sample
 #   --out
 #
-# Main config-controlled parameters:
+# Config keys used:
 #   SAMTOOLS
 #   REFSEQ_MANE_SELECT_GENE_TXT
-#   REF_FASTA_INDEX
-#   SCAN_WHOLE_BAM
+#   HCM_CORE_GENE_LIST
+#   ANALYZE_CORE_GENES_ONLY
 #   TARGET_REGION_FLANK
+#   REF_FASTA_INDEX
 #   MIN_MAPQ
-#   MIN_DISCORDANT_MAPQ
+#   EXCLUDE_DUPLICATES
 #   MIN_DISCORDANT_INSERT_SIZE
 #   MIN_DISCORDANT_READS
 #   DISCORDANT_CLUSTER_DISTANCE
-#   EXCLUDE_DUPLICATES
+#   FILTER_DELETION_ORIENTATION
 #   VERBOSE
 # ============================================================
 
@@ -71,20 +79,20 @@ $config = abs_path($config);
 $bam    = abs_path($bam);
 
 die "[ERROR] Config file not found: $config\n" unless defined $config && -s $config;
-die "[ERROR] BAM file not found: $bam\n" unless defined $bam && -s $bam;
+die "[ERROR] BAM file not found: $bam\n"       unless defined $bam    && -s $bam;
 
 my %CONF = read_config($config);
 
 # Project root inference:
 # If config is /path/to/HCM_WGS_EXON_DEL/conf/hcm_exondel.conf,
 # project_root is /path/to/HCM_WGS_EXON_DEL.
-# Therefore config values like db/xxx are resolved as project_root/db/xxx.
 my $config_dir   = dirname($config);
 my $project_root = dirname($config_dir);
 
 # ============================================================
 # Read parameters from config
 # ============================================================
+
 my $samtools = get_conf_required(\%CONF, "SAMTOOLS");
 
 # Keep command names such as "samtools" unchanged so that PATH can resolve them.
@@ -93,74 +101,72 @@ if ($samtools =~ m{^/}) {
     die "[ERROR] SAMTOOLS not executable: $samtools\n" unless -x $samtools;
 }
 
-my $scan_whole_bam = normalize_bool(get_conf_value(\%CONF, "SCAN_WHOLE_BAM", 0));
-my $target_flank   = get_conf_value(\%CONF, "TARGET_REGION_FLANK", 0);
+my $gene_txt = get_conf_required(\%CONF, "REFSEQ_MANE_SELECT_GENE_TXT");
+$gene_txt = resolve_config_path($gene_txt, $project_root);
+
+die "[ERROR] REFSEQ_MANE_SELECT_GENE_TXT file not found: $gene_txt\n"
+    unless -s $gene_txt;
+
+my $analyze_core_only = normalize_bool(get_conf_value(\%CONF, "ANALYZE_CORE_GENES_ONLY", 1));
+
+my $hcm_gene_list = "";
+my %target_gene_set;
+
+if ($analyze_core_only) {
+    $hcm_gene_list = get_conf_required(\%CONF, "HCM_CORE_GENE_LIST");
+    $hcm_gene_list = resolve_config_path($hcm_gene_list, $project_root);
+
+    die "[ERROR] HCM_CORE_GENE_LIST file not found: $hcm_gene_list\n"
+        unless -s $hcm_gene_list;
+
+    %target_gene_set = read_gene_list($hcm_gene_list);
+
+    die "[ERROR] No valid genes found in HCM_CORE_GENE_LIST: $hcm_gene_list\n"
+        unless scalar(keys %target_gene_set) > 0;
+}
+
+my $target_flank = get_conf_value(\%CONF, "TARGET_REGION_FLANK", 0);
 validate_nonnegative_integer("TARGET_REGION_FLANK", $target_flank);
 
-my $min_mapq = get_conf_value(
-    \%CONF,
-    "MIN_DISCORDANT_MAPQ",
-    get_conf_value(\%CONF, "MIN_MAPQ", 20)
-);
+my $min_mapq = get_conf_value(\%CONF, "MIN_MAPQ", 20);
+validate_nonnegative_integer("MIN_MAPQ", $min_mapq);
+
+my $exclude_duplicates = normalize_bool(get_conf_value(\%CONF, "EXCLUDE_DUPLICATES", 1));
 
 my $min_discordant_insert_size = get_conf_value(\%CONF, "MIN_DISCORDANT_INSERT_SIZE", 1000);
 my $min_discordant_reads       = get_conf_value(\%CONF, "MIN_DISCORDANT_READS", 3);
 my $cluster_distance           = get_conf_value(\%CONF, "DISCORDANT_CLUSTER_DISTANCE", 1000);
-my $exclude_duplicates         = normalize_bool(get_conf_value(\%CONF, "EXCLUDE_DUPLICATES", 1));
+
+validate_positive_integer("MIN_DISCORDANT_INSERT_SIZE",  $min_discordant_insert_size);
+validate_positive_integer("MIN_DISCORDANT_READS",        $min_discordant_reads);
+validate_positive_integer("DISCORDANT_CLUSTER_DISTANCE", $cluster_distance);
 
 # For deletion-like discordant read pairs, only keep inward-facing FR orientation:
 #   left read  = Forward
 #   right read = Reverse
 # This keeps both F1R2 and F2R1, and filters R1F2/R2F1.
-# Default: 1
-my $filter_deletion_orientation = normalize_bool(get_conf_value(\%CONF, "FILTER_DELETION_ORIENTATION", 1));
+my $filter_deletion_orientation = normalize_bool(
+    get_conf_value(\%CONF, "FILTER_DELETION_ORIENTATION", 1)
+);
 
 my $verbose = normalize_bool(get_conf_value(\%CONF, "VERBOSE", 1));
 
-validate_nonnegative_integer("MIN_DISCORDANT_MAPQ/MIN_MAPQ", $min_mapq);
-validate_positive_integer("MIN_DISCORDANT_INSERT_SIZE", $min_discordant_insert_size);
-validate_positive_integer("MIN_DISCORDANT_READS", $min_discordant_reads);
-validate_positive_integer("DISCORDANT_CLUSTER_DISTANCE", $cluster_distance);
-
-my $gene_txt = "";
-my $hcm_gene_list = "";
-my %target_gene_set;
+# Optional FASTA index for clipping flank-extended regions to chromosome length.
 my %chr_length;
-
-if (!$scan_whole_bam) {
-    $gene_txt = get_conf_required(\%CONF, "REFSEQ_MANE_SELECT_GENE_TXT");
-    $gene_txt = resolve_config_path($gene_txt, $project_root);
-
-    die "[ERROR] REFSEQ_MANE_SELECT_GENE_TXT file not found: $gene_txt
-" unless -s $gene_txt;
-
-    # When SCAN_WHOLE_BAM=0, restrict target scanning to genes in HCM_CORE_GENE_LIST if configured.
-    # REFSEQ_MANE_SELECT_GENE_TXT remains the coordinate source, while HCM_CORE_GENE_LIST defines
-    # which genes should be scanned.
-    $hcm_gene_list = get_conf_value(\%CONF, "HCM_CORE_GENE_LIST", "");
-    if ($hcm_gene_list) {
-        $hcm_gene_list = resolve_config_path($hcm_gene_list, $project_root);
-        die "[ERROR] HCM_CORE_GENE_LIST file not found: $hcm_gene_list
-" unless -s $hcm_gene_list;
-        %target_gene_set = read_gene_list($hcm_gene_list);
-        die "[ERROR] No valid genes found in HCM_CORE_GENE_LIST: $hcm_gene_list
-" unless scalar(keys %target_gene_set) > 0;
-    }
-
-    my $fai = get_conf_value(\%CONF, "REF_FASTA_INDEX", "");
-    if ($fai) {
-        $fai = resolve_config_path($fai, $project_root);
-        if (-s $fai) {
-            %chr_length = read_fai($fai);
-        } else {
-            warn "[WARN] REF_FASTA_INDEX is configured but not found: $fai. Region ends will not be clipped by chromosome length.\n";
-        }
+my $fai = get_conf_value(\%CONF, "REF_FASTA_INDEX", "");
+if ($fai) {
+    $fai = resolve_config_path($fai, $project_root);
+    if (-s $fai) {
+        %chr_length = read_fai($fai);
+    } else {
+        warn "[WARN] REF_FASTA_INDEX is configured but not found: $fai. Region ends will not be clipped by chromosome length.\n";
     }
 }
 
 # ============================================================
 # Prepare output
 # ============================================================
+
 my $outdir = dirname($out);
 make_path($outdir) unless -d $outdir;
 
@@ -174,63 +180,49 @@ my $discard_log_out      = $prefix . ".discarded_clusters.tsv";
 # ============================================================
 # Prepare scan regions
 # ============================================================
-my @scan_regions;
 
-if ($scan_whole_bam) {
-    push @scan_regions, {
-        gene       => "ALL",
-        transcript => "NA",
-        chr        => "ALL",
-        start      => 0,
-        end        => 0,
-        strand     => "NA",
-        exon_count => "NA",
-        scan_start => 0,
-        scan_end   => 0,
-        name       => "whole_bam",
-        region     => "",
-    };
-} else {
-    @scan_regions = read_gene_txt(
-        file            => $gene_txt,
-        flank           => $target_flank,
-        chr_length      => \%chr_length,
-        target_gene_set => \%target_gene_set,
-    );
-    die "[ERROR] No valid target regions found in REFSEQ_MANE_SELECT_GENE_TXT: $gene_txt\n" unless @scan_regions;
-}
+my @scan_regions = read_gene_txt(
+    file            => $gene_txt,
+    flank           => $target_flank,
+    chr_length      => \%chr_length,
+    target_gene_set => \%target_gene_set,
+);
+
+die "[ERROR] No valid target regions found in REFSEQ_MANE_SELECT_GENE_TXT: $gene_txt\n"
+    unless @scan_regions;
 
 log_msg($verbose, "[INFO] Discordant read screening started");
 log_msg($verbose, "[INFO] Sample: $sample");
 log_msg($verbose, "[INFO] BAM: $bam");
 log_msg($verbose, "[INFO] Config: $config");
 log_msg($verbose, "[INFO] Project root: $project_root");
-log_msg($verbose, "[INFO] Scan whole BAM: $scan_whole_bam");
-log_msg($verbose, "[INFO] Gene TXT: " . ($gene_txt || "NA"));
+log_msg($verbose, "[INFO] Gene TXT: $gene_txt");
+log_msg($verbose, "[INFO] ANALYZE_CORE_GENES_ONLY: $analyze_core_only");
 log_msg($verbose, "[INFO] HCM core gene list: " . ($hcm_gene_list || "NA"));
 log_msg($verbose, "[INFO] HCM core gene number: " . scalar(keys %target_gene_set));
 log_msg($verbose, "[INFO] Target flank: $target_flank");
 log_msg($verbose, "[INFO] Scan region number: " . scalar(@scan_regions));
-log_msg($verbose, "[INFO] Min discordant MAPQ: $min_mapq");
-log_msg($verbose, "[INFO] Min discordant insert size: $min_discordant_insert_size");
-log_msg($verbose, "[INFO] Min discordant reads: $min_discordant_reads");
-log_msg($verbose, "[INFO] Cluster distance: $cluster_distance");
-log_msg($verbose, "[INFO] Exclude duplicates: $exclude_duplicates");
-log_msg($verbose, "[INFO] Filter deletion-like FR orientation: $filter_deletion_orientation");
+log_msg($verbose, "[INFO] MIN_MAPQ: $min_mapq");
+log_msg($verbose, "[INFO] EXCLUDE_DUPLICATES: $exclude_duplicates");
+log_msg($verbose, "[INFO] MIN_DISCORDANT_INSERT_SIZE: $min_discordant_insert_size");
+log_msg($verbose, "[INFO] MIN_DISCORDANT_READS: $min_discordant_reads");
+log_msg($verbose, "[INFO] DISCORDANT_CLUSTER_DISTANCE: $cluster_distance");
+log_msg($verbose, "[INFO] FILTER_DELETION_ORIENTATION: $filter_deletion_orientation");
+log_msg($verbose, "[INFO] REF_FASTA_INDEX: " . ($fai || "NA"));
 
 # ============================================================
 # Scan BAM for discordant pairs
 # ============================================================
+
 my @discordant_pairs;
 
 open my $raw_fh, ">", $raw_pairs_out
     or die "[ERROR] Cannot write raw pairs output: $raw_pairs_out\n";
 
-print $raw_fh join("    ", qw(
+print $raw_fh join("\t", qw(
     SampleID Read_Name Chrom Read_Pos Mate_Chrom Mate_Pos Insert_Size
     MAPQ FLAG CIGAR Pair_Orientation Gene Transcript Target_Name Scan_Region Pair_Key
-)) . "
-";
+)) . "\n";
 
 foreach my $region (@scan_regions) {
     my @pairs = scan_region_for_discordant_pairs(
@@ -241,9 +233,10 @@ foreach my $region (@scan_regions) {
         min_mapq        => $min_mapq,
         min_insert_size => $min_discordant_insert_size,
         exclude_dup     => $exclude_duplicates,
-        filter_del_ori => $filter_deletion_orientation,
+        filter_del_ori  => $filter_deletion_orientation,
         raw_fh          => $raw_fh,
     );
+
     push @discordant_pairs, @pairs;
 }
 
@@ -254,6 +247,7 @@ my @unique_pairs = remove_duplicate_pairs(@discordant_pairs);
 # ============================================================
 # Cluster discordant pairs
 # ============================================================
+
 my @clusters = cluster_discordant_pairs(
     pairs            => \@unique_pairs,
     cluster_distance => $cluster_distance,
@@ -262,6 +256,7 @@ my @clusters = cluster_discordant_pairs(
 # ============================================================
 # Output summary, supporting reads, and discarded clusters
 # ============================================================
+
 open my $out_fh, ">", $out
     or die "[ERROR] Cannot write output file: $out\n";
 
@@ -278,11 +273,10 @@ print $out_fh join("\t", qw(
     Gene Transcript Target_Name Discordant_Status Candidate_Status Comment
 )) . "\n";
 
-print $support_fh join("    ", qw(
+print $support_fh join("\t", qw(
     SampleID Cluster_ID Read_Name Chrom Read_Pos Mate_Chrom Mate_Pos Insert_Size
     MAPQ FLAG CIGAR Pair_Orientation Gene Transcript Target_Name Scan_Region
-)) . "
-";
+)) . "\n";
 
 print $discard_fh join("\t", qw(
     SampleID Chrom Start End Candidate_Length Discordant_Reads
@@ -295,10 +289,13 @@ my $discard_cluster_count = 0;
 
 foreach my $cluster (@clusters) {
     my @discard_reasons;
-    push @discard_reasons, "low_discordant_reads" if $cluster->{discordant_reads} < $min_discordant_reads;
+
+    push @discard_reasons, "low_discordant_reads"
+        if $cluster->{discordant_reads} < $min_discordant_reads;
 
     if (@discard_reasons) {
         $discard_cluster_count++;
+
         print $discard_fh join("\t",
             $sample,
             $cluster->{chr},
@@ -312,6 +309,7 @@ foreach my $cluster (@clusters) {
             $cluster->{target_name},
             join(",", @discard_reasons),
         ) . "\n";
+
         next;
     }
 
@@ -388,6 +386,7 @@ exit 0;
 # ============================================================
 # Subroutines
 # ============================================================
+
 sub scan_region_for_discordant_pairs {
     my %args = @_;
 
@@ -398,19 +397,29 @@ sub scan_region_for_discordant_pairs {
     my $min_mapq        = $args{min_mapq};
     my $min_insert_size = $args{min_insert_size};
     my $exclude_dup     = $args{exclude_dup};
-    my $filter_del_ori = $args{filter_del_ori};
+    my $filter_del_ori  = $args{filter_del_ori};
     my $raw_fh          = $args{raw_fh};
 
     my @pairs;
-    my $cmd;
 
+    my $cmd;
     if ($region->{region}) {
-        $cmd = join(" ", shell_quote($samtools), "view", shell_quote($bam), shell_quote($region->{region}));
+        $cmd = join(" ",
+            shell_quote($samtools),
+            "view",
+            shell_quote($bam),
+            shell_quote($region->{region})
+        );
     } else {
-        $cmd = join(" ", shell_quote($samtools), "view", shell_quote($bam));
+        $cmd = join(" ",
+            shell_quote($samtools),
+            "view",
+            shell_quote($bam)
+        );
     }
 
-    open my $pipe, "$cmd |" or die "[ERROR] Failed to run command: $cmd\n";
+    open my $pipe, "$cmd |"
+        or die "[ERROR] Failed to run command: $cmd\n";
 
     while (my $line = <$pipe>) {
         chomp $line;
@@ -454,10 +463,10 @@ sub scan_region_for_discordant_pairs {
 
         my $pair_orientation = get_pair_orientation($flag, $pos, $pnext);
 
-        # Deletion-like discordant read pairs should have FR orientation when ordered by genomic position:
+        # Deletion-like discordant read pairs should have FR orientation when
+        # ordered by genomic position:
         #   left read  = Forward
         #   right read = Reverse
-        # This keeps both F1R2 and F2R1.
         if ($filter_del_ori) {
             next unless is_deletion_like_orientation($flag, $pos, $pnext);
         }
@@ -478,27 +487,27 @@ sub scan_region_for_discordant_pairs {
             $abs_tlen,
         );
 
-        my $scan_region = $region->{region} || "whole_bam";
+        my $scan_region = $region->{region};
 
         my $pair = {
-            sample      => $sample,
-            read_name   => $qname,
-            chr         => $rname,
-            read_pos    => $pos,
-            mate_chr    => $mate_chr,
-            mate_pos    => $pnext,
-            left_pos    => $left_pos,
-            right_pos   => $right_pos,
-            insert_size => $abs_tlen,
-            mapq        => $mapq,
-            flag        => $flag,
-            cigar       => $cigar,
+            sample           => $sample,
+            read_name        => $qname,
+            chr              => $rname,
+            read_pos         => $pos,
+            mate_chr         => $mate_chr,
+            mate_pos         => $pnext,
+            left_pos         => $left_pos,
+            right_pos        => $right_pos,
+            insert_size      => $abs_tlen,
+            mapq             => $mapq,
+            flag             => $flag,
+            cigar            => $cigar,
             pair_orientation => $pair_orientation,
-            gene        => $region->{gene},
-            transcript  => $region->{transcript},
-            target_name => $region->{name},
-            scan_region => $scan_region,
-            pair_key    => $pair_key,
+            gene             => $region->{gene},
+            transcript       => $region->{transcript},
+            target_name      => $region->{name},
+            scan_region      => $scan_region,
+            pair_key         => $pair_key,
         };
 
         push @pairs, $pair;
@@ -534,9 +543,11 @@ sub cluster_discordant_pairs {
 
     my $pairs_ref        = $args{pairs};
     my $cluster_distance = $args{cluster_distance};
+
     my @pairs = @$pairs_ref;
 
     my %by_chr;
+
     foreach my $p (@pairs) {
         push @{ $by_chr{ $p->{chr} } }, $p;
     }
@@ -545,7 +556,8 @@ sub cluster_discordant_pairs {
 
     foreach my $chr (sort keys %by_chr) {
         my @sorted = sort {
-            $a->{left_pos}  <=> $b->{left_pos} ||
+            $a->{left_pos}  <=> $b->{left_pos}
+                ||
             $a->{right_pos} <=> $b->{right_pos}
         } @{ $by_chr{$chr} };
 
@@ -580,6 +592,7 @@ sub cluster_discordant_pairs {
 
 sub build_cluster {
     my ($pairs_ref) = @_;
+
     my @pairs = @$pairs_ref;
     my $first = $pairs[0];
 
@@ -594,6 +607,7 @@ sub build_cluster {
         push @lefts,  $p->{left_pos};
         push @rights, $p->{right_pos};
         push @sizes,  $p->{insert_size};
+
         $genes{ $p->{gene} }               = 1 if defined $p->{gene};
         $transcripts{ $p->{transcript} }   = 1 if defined $p->{transcript};
         $target_names{ $p->{target_name} } = 1 if defined $p->{target_name};
@@ -639,6 +653,7 @@ sub build_cluster {
 
 sub remove_duplicate_pairs {
     my @pairs = @_;
+
     my %seen;
     my @unique;
 
@@ -653,18 +668,20 @@ sub remove_duplicate_pairs {
 sub read_gene_txt {
     my %args = @_;
 
-    my $file           = $args{file};
-    my $flank          = $args{flank};
-    my $chr_length_ref = $args{chr_length} || {};
+    my $file            = $args{file};
+    my $flank           = $args{flank};
+    my $chr_length_ref  = $args{chr_length} || {};
     my $target_gene_set = $args{target_gene_set} || {};
 
     my @regions;
 
-    open my $fh, "<", $file or die "[ERROR] Cannot open gene TXT: $file\n";
+    open my $fh, "<", $file
+        or die "[ERROR] Cannot open gene TXT: $file\n";
 
     while (my $line = <$fh>) {
         chomp $line;
         $line =~ s/\r$//;
+
         next if $line =~ /^\s*$/;
         next if $line =~ /^\s*#/;
 
@@ -672,30 +689,36 @@ sub read_gene_txt {
 
         # Expected columns:
         # Gene Transcript Chrom Start End Strand ExonCount
-        die "[ERROR] Invalid gene TXT line. Expected >=7 columns: $line\n" unless @f >= 7;
+        die "[ERROR] Invalid gene TXT line. Expected >=7 columns: $line\n"
+            unless @f >= 7;
 
         my ($gene, $transcript, $chr, $start, $end, $strand, $exon_count) = @f[0..6];
 
-        # Skip a header line if present.
+        # Skip header line if present.
         next if $gene =~ /^Gene$/i && $transcript =~ /^Transcript$/i;
 
-        # If HCM_CORE_GENE_LIST is configured, only keep genes in that list.
+        # If ANALYZE_CORE_GENES_ONLY=1, only keep genes in HCM_CORE_GENE_LIST.
         if (scalar(keys %$target_gene_set) > 0) {
             next unless exists $target_gene_set->{$gene};
         }
 
         die "[ERROR] Invalid gene TXT coordinate: $line\n"
-            unless defined $start && defined $end && $start =~ /^\d+$/ && $end =~ /^\d+$/ && $end >= $start;
+            unless defined $start
+                && defined $end
+                && $start =~ /^\d+$/
+                && $end   =~ /^\d+$/
+                && $end >= $start;
 
         my $scan_start = $start - $flank;
         $scan_start = 1 if $scan_start < 1;
 
         my $scan_end = $end + $flank;
+
         if (exists $chr_length_ref->{$chr} && $scan_end > $chr_length_ref->{$chr}) {
             $scan_end = $chr_length_ref->{$chr};
         }
 
-        my $name = join("|", $gene, $transcript, $chr . ":" . $start . "-" . $end);
+        my $name   = join("|", $gene, $transcript, $chr . ":" . $start . "-" . $end);
         my $region = $chr . ":" . $scan_start . "-" . $scan_end;
 
         push @regions, {
@@ -714,26 +737,31 @@ sub read_gene_txt {
     }
 
     close $fh;
+
     return @regions;
 }
 
 sub read_gene_list {
     my ($file) = @_;
+
     my %genes;
 
-    open my $fh, "<", $file or die "[ERROR] Cannot open gene list: $file
-";
+    open my $fh, "<", $file
+        or die "[ERROR] Cannot open gene list: $file\n";
 
     while (my $line = <$fh>) {
         chomp $line;
+
         $line =~ s/\r$//;
         $line =~ s/^\s+//;
         $line =~ s/\s+$//;
+
         next if $line eq "";
         next if $line =~ /^#/;
 
         my @f = split /[\t, ]+/, $line;
         my $gene = $f[0];
+
         next unless defined $gene && $gene ne "";
         next if $gene =~ /^Gene$/i;
 
@@ -741,67 +769,90 @@ sub read_gene_list {
     }
 
     close $fh;
+
     return %genes;
 }
 
 sub read_fai {
     my ($file) = @_;
+
     my %len;
 
-    open my $fh, "<", $file or die "[ERROR] Cannot open FASTA index: $file\n";
+    open my $fh, "<", $file
+        or die "[ERROR] Cannot open FASTA index: $file\n";
 
     while (my $line = <$fh>) {
         chomp $line;
         next if $line =~ /^\s*$/;
+
         my @f = split /\t/, $line;
         next unless @f >= 2;
+
         my ($chr, $length) = @f[0,1];
+
         next unless defined $length && $length =~ /^\d+$/;
+
         $len{$chr} = $length;
     }
 
     close $fh;
+
     return %len;
 }
 
 sub read_config {
     my ($file) = @_;
+
     my %conf;
 
-    open my $fh, "<", $file or die "[ERROR] Cannot open config file: $file\n";
+    open my $fh, "<", $file
+        or die "[ERROR] Cannot open config file: $file\n";
 
     while (my $line = <$fh>) {
         chomp $line;
         $line =~ s/\r$//;
+
         next if $line =~ /^\s*$/;
         next if $line =~ /^\s*#/;
 
         if ($line =~ /^\s*([^=\s]+)\s*=\s*(.*?)\s*$/) {
             my $key = $1;
             my $val = $2;
+
             $val =~ s/\s+#.*$//;
+            $val =~ s/^\s+|\s+$//g;
             $val =~ s/^['"]//;
             $val =~ s/['"]$//;
+
             $conf{$key} = $val;
         }
     }
 
     close $fh;
+
     return %conf;
 }
 
 sub get_conf_required {
     my ($conf_ref, $key) = @_;
+
     die "[ERROR] Required config parameter missing: $key\n"
-        unless exists $conf_ref->{$key} && defined $conf_ref->{$key} && $conf_ref->{$key} ne "";
+        unless exists $conf_ref->{$key}
+            && defined $conf_ref->{$key}
+            && $conf_ref->{$key} ne "";
+
     return $conf_ref->{$key};
 }
 
 sub get_conf_value {
     my ($conf_ref, $key, $default) = @_;
-    if (exists $conf_ref->{$key} && defined $conf_ref->{$key} && $conf_ref->{$key} ne "") {
+
+    if (exists $conf_ref->{$key}
+        && defined $conf_ref->{$key}
+        && $conf_ref->{$key} ne "") {
         return $conf_ref->{$key};
     }
+
     return $default;
 }
 
@@ -813,36 +864,43 @@ sub resolve_config_path {
     # Absolute path.
     return $path if $path =~ m{^/};
 
-    # Keep simple command names unchanged. This is mostly for executable fields,
-    # but it is safe because file fields are checked by -s later.
-    # For paths containing /, resolve them against project root.
+    # Keep simple command names unchanged.
     if ($path !~ m{/}) {
         return $path;
     }
 
     my $resolved = $project_root . "/" . $path;
     $resolved =~ s{//+}{/}g;
+
     return $resolved;
 }
 
 sub normalize_bool {
     my ($value) = @_;
+
     return 0 unless defined $value;
+
+    $value =~ s/^\s+|\s+$//g;
+
     return 1 if $value =~ /^1$/;
     return 1 if $value =~ /^true$/i;
     return 1 if $value =~ /^yes$/i;
     return 1 if $value =~ /^y$/i;
+    return 1 if $value =~ /^on$/i;
+
     return 0;
 }
 
 sub validate_positive_integer {
     my ($name, $value) = @_;
+
     die "[ERROR] $name must be a positive integer. Current value: $value\n"
         unless defined $value && $value =~ /^[1-9]\d*$/;
 }
 
 sub validate_nonnegative_integer {
     my ($name, $value) = @_;
+
     die "[ERROR] $name must be a non-negative integer. Current value: $value\n"
         unless defined $value && $value =~ /^\d+$/;
 }
@@ -867,6 +925,7 @@ sub is_deletion_like_orientation {
     my $left_is_read = ($pos <= $pnext) ? 1 : 0;
 
     my ($left_reverse, $right_reverse);
+
     if ($left_is_read) {
         $left_reverse  = $read_reverse;
         $right_reverse = $mate_reverse;
@@ -888,7 +947,9 @@ sub get_pair_orientation {
     my $mate_strand = is_mate_reverse($flag) ? "R" : "F";
 
     my $read_no = is_read1($flag) ? "1" : is_read2($flag) ? "2" : "?";
+
     my $mate_no;
+
     if ($read_no eq "1") {
         $mate_no = "2";
     } elsif ($read_no eq "2") {
@@ -909,8 +970,11 @@ sub get_pair_orientation {
 
 sub median {
     my @x = sort { $a <=> $b } @_;
+
     return 0 unless @x;
+
     my $n = scalar @x;
+
     if ($n % 2) {
         return $x[int($n / 2)];
     } else {
@@ -920,33 +984,45 @@ sub median {
 
 sub min {
     my @x = @_;
+
     return 0 unless @x;
+
     my $min = $x[0];
+
     foreach my $v (@x) {
         $min = $v if $v < $min;
     }
+
     return $min;
 }
 
 sub max {
     my @x = @_;
+
     return 0 unless @x;
+
     my $max = $x[0];
+
     foreach my $v (@x) {
         $max = $v if $v > $max;
     }
+
     return $max;
 }
 
 sub shell_quote {
     my ($str) = @_;
+
     return "''" unless defined $str;
+
     $str =~ s/'/'"'"'/g;
+
     return "'$str'";
 }
 
 sub log_msg {
     my ($verbose, $msg) = @_;
+
     print $msg . "\n" if $verbose;
 }
 
@@ -957,7 +1033,7 @@ Usage:
     --config conf/hcm_exondel.conf \\
     --bam sample.sorted.bam \\
     --sample SAMPLE001 \\
-    --out results/SAMPLE001/02.discordant_reads/SAMPLE001.discordant_reads.tsv
+    --out results/SAMPLE001/03.discordant_reads/SAMPLE001.discordant_reads.tsv
 
 Required command-line arguments:
   --config    Config file
@@ -965,19 +1041,19 @@ Required command-line arguments:
   --sample    Sample ID
   --out       Output discordant-read summary file
 
-Config requirements based on conf/hcm_exondel.example.conf:
+Config keys:
   SAMTOOLS
-  REFSEQ_MANE_SELECT_GENE_TXT      required when SCAN_WHOLE_BAM=0
-  HCM_CORE_GENE_LIST              optional; if set, only these genes are scanned when SCAN_WHOLE_BAM=0
-  REF_FASTA_INDEX                  optional but recommended
-  SCAN_WHOLE_BAM                  default: 0
+  REFSEQ_MANE_SELECT_GENE_TXT
+  HCM_CORE_GENE_LIST              required when ANALYZE_CORE_GENES_ONLY=1
+  ANALYZE_CORE_GENES_ONLY         default: 1
   TARGET_REGION_FLANK             default: 0
-  MIN_DISCORDANT_MAPQ             fallback: MIN_MAPQ, then 20
+  REF_FASTA_INDEX                 optional
+  MIN_MAPQ                        default: 20
+  EXCLUDE_DUPLICATES              default: 1
   MIN_DISCORDANT_INSERT_SIZE      default: 1000
   MIN_DISCORDANT_READS            default: 3
   DISCORDANT_CLUSTER_DISTANCE     default: 1000
-  EXCLUDE_DUPLICATES              default: 1
-  FILTER_DELETION_ORIENTATION    default: 1
+  FILTER_DELETION_ORIENTATION     default: 1
   VERBOSE                         default: 1
 
 Path rule:
@@ -991,11 +1067,15 @@ Output:
   *.discordant_reads.discarded_clusters.tsv
 
 Notes:
+  This script does not scan whole BAM.
+  If ANALYZE_CORE_GENES_ONLY=1, only genes in HCM_CORE_GENE_LIST are scanned.
+  If ANALYZE_CORE_GENES_ONLY=0, all genes in REFSEQ_MANE_SELECT_GENE_TXT are scanned.
+
   This script intentionally does not use MIN_DISCORDANT_CANDIDATE_SIZE
   or MAX_DISCORDANT_CANDIDATE_SIZE. Candidate-size filtering should be
   handled later during evidence merging or exon annotation.
+
 USAGE
 }
-
 
 
