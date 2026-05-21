@@ -70,16 +70,14 @@ my $config;
 my $bam;
 my $sample;
 my $out;
-my $threads = 4;
 my $help = 0;
 
 GetOptions(
-    "config=s"  => \$config,
-    "bam=s"     => \$bam,
-    "sample=s"  => \$sample,
-    "out=s"     => \$out,
-    "threads=i" => \$threads,
-    "help"      => \$help,
+    "config=s" => \$config,
+    "bam=s"    => \$bam,
+    "sample=s" => \$sample,
+    "out=s"    => \$out,
+    "help"     => \$help,
 ) or die usage();
 
 if ($help) {
@@ -142,8 +140,8 @@ my $min_gene_mean_depth = get_conf(\%CONF, "MIN_GENE_MEAN_DEPTH", 20);
 my $min_mapq    = get_conf(\%CONF, "MIN_MAPQ", 20);
 my $exclude_dup = get_conf(\%CONF, "EXCLUDE_DUPLICATES", 1);
 
-my $del_depth_ratio_cutoff = get_conf(\%CONF, "DEL_DEPTH_RATIO_CUTOFF", 0.65);
-my $min_consecutive_del_windows = get_conf(\%CONF, "MIN_CONSECUTIVE_DEL_WINDOWS", 3);
+my $del_depth_ratio_cutoff       = get_conf(\%CONF, "DEL_DEPTH_RATIO_CUTOFF", 0.65);
+my $min_consecutive_del_windows  = get_conf(\%CONF, "MIN_CONSECUTIVE_DEL_WINDOWS", 3);
 
 # Default is 1 because existing gene depth files are reused automatically.
 my $keep_depth_file = get_conf(\%CONF, "KEEP_GENE_DEPTH_FILE", 1);
@@ -1158,11 +1156,19 @@ sub join_region {
 }
 
 sub shell_quote {
-    my ($s) = @_;
-    die "[ERROR] Undefined value passed to shell_quote\n" unless defined $s;
+    my ($str) = @_;
 
-    $s =~ s/'/'\\''/g;
-    return "'$s'";
+    die "[ERROR] Undefined shell argument\n" unless defined $str;
+
+    $str =~ s/^\s+|\s+$//g;
+
+    die "[ERROR] Empty shell argument\n" if $str eq "";
+
+    # Do not wrap arguments with single quotes.
+    # Escape common shell metacharacters only when needed.
+    $str =~ s/([ \t\n\r\\\"\`\$\&\|\;\<\>\(\)\{\}\[\]\*\?\!\#])/\\$1/g;
+
+    return $str;
 }
 
 sub check_positive_integer {
@@ -1211,8 +1217,7 @@ Usage:
       --config conf/hcm_exondel.example.conf \\
       --bam sample.sorted.bam \\
       --sample SAMPLE001 \\
-      --out results/SAMPLE001/01.depth/SAMPLE001.depth_candidates.tsv \\
-      --threads 4
+      --out results/SAMPLE001/01.depth/SAMPLE001.depth_candidates.tsv
 
 Required arguments:
   --config     Config file.
@@ -1221,7 +1226,6 @@ Required arguments:
   --out        Output depth candidate file.
 
 Optional arguments:
-  --threads    Number of threads. Reserved for compatibility.
   --help       Show this help message.
 
 Required config:

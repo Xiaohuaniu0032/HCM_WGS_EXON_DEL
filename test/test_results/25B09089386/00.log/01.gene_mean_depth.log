@@ -19,139 +19,241 @@
 [INFO] Gene regions retained          : 34
 [INFO] Total windows generated        : 9674
 [INFO] [1/34] Processing gene: TRIM63 NM_032588 chr1:26377792-26394121
-[INFO] [1/34] Reuse existing gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_TRIM63_NM_032588_chr1_26377792_26394121.depth.tsv
+[INFO] [1/34] Gene depth file not found or empty, generate now: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_TRIM63_NM_032588_chr1_26377792_26394121.depth.tsv
+[INFO] Generate gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_TRIM63_NM_032588_chr1_26377792_26394121.depth.tsv
+[INFO] Command: /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools depth -a -q 20 -r chr1:26377792-26394121 -G 1024 /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_TRIM63_NM_032588_chr1_26377792_26394121.depth.tsv
+[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [INFO] [1/34] Calculating gene/window depth from: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_TRIM63_NM_032588_chr1_26377792_26394121.depth.tsv
 [INFO] [1/34] Finished gene: TRIM63, Gene_Mean_Depth=54.5327
 [INFO] [2/34] Processing gene: NEXN NM_144573 chr1:78354309-78409580
-[INFO] [2/34] Reuse existing gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_NEXN_NM_144573_chr1_78354309_78409580.depth.tsv
+[INFO] [2/34] Gene depth file not found or empty, generate now: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_NEXN_NM_144573_chr1_78354309_78409580.depth.tsv
+[INFO] Generate gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_NEXN_NM_144573_chr1_78354309_78409580.depth.tsv
+[INFO] Command: /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools depth -a -q 20 -r chr1:78354309-78409580 -G 1024 /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_NEXN_NM_144573_chr1_78354309_78409580.depth.tsv
+[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [INFO] [2/34] Calculating gene/window depth from: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_NEXN_NM_144573_chr1_78354309_78409580.depth.tsv
 [INFO] [2/34] Finished gene: NEXN, Gene_Mean_Depth=52.1204
 [INFO] [3/34] Processing gene: CASQ2 NM_001232 chr1:116242642-116311335
-[INFO] [3/34] Reuse existing gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_CASQ2_NM_001232_chr1_116242642_116311335.depth.tsv
+[INFO] [3/34] Gene depth file not found or empty, generate now: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_CASQ2_NM_001232_chr1_116242642_116311335.depth.tsv
+[INFO] Generate gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_CASQ2_NM_001232_chr1_116242642_116311335.depth.tsv
+[INFO] Command: /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools depth -a -q 20 -r chr1:116242642-116311335 -G 1024 /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_CASQ2_NM_001232_chr1_116242642_116311335.depth.tsv
+[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [INFO] [3/34] Calculating gene/window depth from: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_CASQ2_NM_001232_chr1_116242642_116311335.depth.tsv
 [INFO] [3/34] Finished gene: CASQ2, Gene_Mean_Depth=55.4067
 [INFO] [4/34] Processing gene: OBSCN NM_001386125 chr1:228395745-228566577
-[INFO] [4/34] Reuse existing gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_OBSCN_NM_001386125_chr1_228395745_228566577.depth.tsv
+[INFO] [4/34] Gene depth file not found or empty, generate now: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_OBSCN_NM_001386125_chr1_228395745_228566577.depth.tsv
+[INFO] Generate gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_OBSCN_NM_001386125_chr1_228395745_228566577.depth.tsv
+[INFO] Command: /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools depth -a -q 20 -r chr1:228395745-228566577 -G 1024 /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_OBSCN_NM_001386125_chr1_228395745_228566577.depth.tsv
+[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [INFO] [4/34] Calculating gene/window depth from: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_OBSCN_NM_001386125_chr1_228395745_228566577.depth.tsv
 [INFO] [4/34] Finished gene: OBSCN, Gene_Mean_Depth=47.2464
 [INFO] [5/34] Processing gene: ACTN2 NM_001103 chr1:236849799-236927931
-[INFO] [5/34] Reuse existing gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_ACTN2_NM_001103_chr1_236849799_236927931.depth.tsv
+[INFO] [5/34] Gene depth file not found or empty, generate now: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_ACTN2_NM_001103_chr1_236849799_236927931.depth.tsv
+[INFO] Generate gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_ACTN2_NM_001103_chr1_236849799_236927931.depth.tsv
+[INFO] Command: /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools depth -a -q 20 -r chr1:236849799-236927931 -G 1024 /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_ACTN2_NM_001103_chr1_236849799_236927931.depth.tsv
+[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [INFO] [5/34] Calculating gene/window depth from: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_ACTN2_NM_001103_chr1_236849799_236927931.depth.tsv
 [INFO] [5/34] Finished gene: ACTN2, Gene_Mean_Depth=57.4942
 [INFO] [6/34] Processing gene: RYR2 NM_001035 chr1:237205484-237997288
-[INFO] [6/34] Reuse existing gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_RYR2_NM_001035_chr1_237205484_237997288.depth.tsv
+[INFO] [6/34] Gene depth file not found or empty, generate now: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_RYR2_NM_001035_chr1_237205484_237997288.depth.tsv
+[INFO] Generate gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_RYR2_NM_001035_chr1_237205484_237997288.depth.tsv
+[INFO] Command: /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools depth -a -q 20 -r chr1:237205484-237997288 -G 1024 /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_RYR2_NM_001035_chr1_237205484_237997288.depth.tsv
+[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [INFO] [6/34] Calculating gene/window depth from: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_RYR2_NM_001035_chr1_237205484_237997288.depth.tsv
 [INFO] [6/34] Finished gene: RYR2, Gene_Mean_Depth=53.8352
 [INFO] [7/34] Processing gene: TTN NM_001267550 chr2:179390716-179672150
-[INFO] [7/34] Reuse existing gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_TTN_NM_001267550_chr2_179390716_179672150.depth.tsv
+[INFO] [7/34] Gene depth file not found or empty, generate now: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_TTN_NM_001267550_chr2_179390716_179672150.depth.tsv
+[INFO] Generate gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_TTN_NM_001267550_chr2_179390716_179672150.depth.tsv
+[INFO] Command: /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools depth -a -q 20 -r chr2:179390716-179672150 -G 1024 /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_TTN_NM_001267550_chr2_179390716_179672150.depth.tsv
+[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [INFO] [7/34] Calculating gene/window depth from: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_TTN_NM_001267550_chr2_179390716_179672150.depth.tsv
 [INFO] [7/34] Finished gene: TTN, Gene_Mean_Depth=58.4554
 [INFO] [8/34] Processing gene: TNNC1 NM_003280 chr3:52485116-52488057
-[INFO] [8/34] Reuse existing gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_TNNC1_NM_003280_chr3_52485116_52488057.depth.tsv
+[INFO] [8/34] Gene depth file not found or empty, generate now: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_TNNC1_NM_003280_chr3_52485116_52488057.depth.tsv
+[INFO] Generate gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_TNNC1_NM_003280_chr3_52485116_52488057.depth.tsv
+[INFO] Command: /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools depth -a -q 20 -r chr3:52485116-52488057 -G 1024 /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_TNNC1_NM_003280_chr3_52485116_52488057.depth.tsv
+[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [INFO] [8/34] Calculating gene/window depth from: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_TNNC1_NM_003280_chr3_52485116_52488057.depth.tsv
 [INFO] [8/34] Finished gene: TNNC1, Gene_Mean_Depth=50.2352
 [INFO] [9/34] Processing gene: KLHL24 NM_017644 chr3:183353411-183402307
-[INFO] [9/34] Reuse existing gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_KLHL24_NM_017644_chr3_183353411_183402307.depth.tsv
+[INFO] [9/34] Gene depth file not found or empty, generate now: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_KLHL24_NM_017644_chr3_183353411_183402307.depth.tsv
+[INFO] Generate gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_KLHL24_NM_017644_chr3_183353411_183402307.depth.tsv
+[INFO] Command: /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools depth -a -q 20 -r chr3:183353411-183402307 -G 1024 /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_KLHL24_NM_017644_chr3_183353411_183402307.depth.tsv
+[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [INFO] [9/34] Calculating gene/window depth from: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_KLHL24_NM_017644_chr3_183353411_183402307.depth.tsv
 [INFO] [9/34] Finished gene: KLHL24, Gene_Mean_Depth=53.1957
 [INFO] [10/34] Processing gene: MYOZ2 NM_016599 chr4:120056987-120108944
-[INFO] [10/34] Reuse existing gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_MYOZ2_NM_016599_chr4_120056987_120108944.depth.tsv
+[INFO] [10/34] Gene depth file not found or empty, generate now: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_MYOZ2_NM_016599_chr4_120056987_120108944.depth.tsv
+[INFO] Generate gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_MYOZ2_NM_016599_chr4_120056987_120108944.depth.tsv
+[INFO] Command: /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools depth -a -q 20 -r chr4:120056987-120108944 -G 1024 /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_MYOZ2_NM_016599_chr4_120056987_120108944.depth.tsv
+[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [INFO] [10/34] Calculating gene/window depth from: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_MYOZ2_NM_016599_chr4_120056987_120108944.depth.tsv
 [INFO] [10/34] Finished gene: MYOZ2, Gene_Mean_Depth=54.5189
 [INFO] [11/34] Processing gene: PDLIM3 NM_014476 chr4:186421814-186456661
-[INFO] [11/34] Reuse existing gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_PDLIM3_NM_014476_chr4_186421814_186456661.depth.tsv
+[INFO] [11/34] Gene depth file not found or empty, generate now: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_PDLIM3_NM_014476_chr4_186421814_186456661.depth.tsv
+[INFO] Generate gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_PDLIM3_NM_014476_chr4_186421814_186456661.depth.tsv
+[INFO] Command: /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools depth -a -q 20 -r chr4:186421814-186456661 -G 1024 /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_PDLIM3_NM_014476_chr4_186421814_186456661.depth.tsv
+[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [INFO] [11/34] Calculating gene/window depth from: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_PDLIM3_NM_014476_chr4_186421814_186456661.depth.tsv
 [INFO] [11/34] Finished gene: PDLIM3, Gene_Mean_Depth=51.8564
 [INFO] [12/34] Processing gene: DSP NM_004415 chr6:7541904-7586947
-[INFO] [12/34] Reuse existing gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_DSP_NM_004415_chr6_7541904_7586947.depth.tsv
+[INFO] [12/34] Gene depth file not found or empty, generate now: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_DSP_NM_004415_chr6_7541904_7586947.depth.tsv
+[INFO] Generate gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_DSP_NM_004415_chr6_7541904_7586947.depth.tsv
+[INFO] Command: /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools depth -a -q 20 -r chr6:7541904-7586947 -G 1024 /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_DSP_NM_004415_chr6_7541904_7586947.depth.tsv
+[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [INFO] [12/34] Calculating gene/window depth from: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_DSP_NM_004415_chr6_7541904_7586947.depth.tsv
 [INFO] [12/34] Finished gene: DSP, Gene_Mean_Depth=53.9527
 [INFO] [13/34] Processing gene: FLNC NM_001458 chr7:128470460-128499326
-[INFO] [13/34] Reuse existing gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_FLNC_NM_001458_chr7_128470460_128499326.depth.tsv
+[INFO] [13/34] Gene depth file not found or empty, generate now: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_FLNC_NM_001458_chr7_128470460_128499326.depth.tsv
+[INFO] Generate gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_FLNC_NM_001458_chr7_128470460_128499326.depth.tsv
+[INFO] Command: /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools depth -a -q 20 -r chr7:128470460-128499326 -G 1024 /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_FLNC_NM_001458_chr7_128470460_128499326.depth.tsv
+[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [INFO] [13/34] Calculating gene/window depth from: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_FLNC_NM_001458_chr7_128470460_128499326.depth.tsv
 [INFO] [13/34] Finished gene: FLNC, Gene_Mean_Depth=45.8524
 [INFO] [14/34] Processing gene: PRKAG2 NM_016203 chr7:151253213-151574200
-[INFO] [14/34] Reuse existing gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_PRKAG2_NM_016203_chr7_151253213_151574200.depth.tsv
+[INFO] [14/34] Gene depth file not found or empty, generate now: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_PRKAG2_NM_016203_chr7_151253213_151574200.depth.tsv
+[INFO] Generate gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_PRKAG2_NM_016203_chr7_151253213_151574200.depth.tsv
+[INFO] Command: /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools depth -a -q 20 -r chr7:151253213-151574200 -G 1024 /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_PRKAG2_NM_016203_chr7_151253213_151574200.depth.tsv
+[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [INFO] [14/34] Calculating gene/window depth from: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_PRKAG2_NM_016203_chr7_151253213_151574200.depth.tsv
 [INFO] [14/34] Finished gene: PRKAG2, Gene_Mean_Depth=51.3581
 [INFO] [15/34] Processing gene: KLF10 NM_005655 chr8:103661012-103667953
-[INFO] [15/34] Reuse existing gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_KLF10_NM_005655_chr8_103661012_103667953.depth.tsv
+[INFO] [15/34] Gene depth file not found or empty, generate now: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_KLF10_NM_005655_chr8_103661012_103667953.depth.tsv
+[INFO] Generate gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_KLF10_NM_005655_chr8_103661012_103667953.depth.tsv
+[INFO] Command: /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools depth -a -q 20 -r chr8:103661012-103667953 -G 1024 /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_KLF10_NM_005655_chr8_103661012_103667953.depth.tsv
+[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [INFO] [15/34] Calculating gene/window depth from: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_KLF10_NM_005655_chr8_103661012_103667953.depth.tsv
 [INFO] [15/34] Finished gene: KLF10, Gene_Mean_Depth=44.6304
 [INFO] [16/34] Processing gene: CACNB2 NM_201596 chr10:18429353-18832486
-[INFO] [16/34] Reuse existing gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_CACNB2_NM_201596_chr10_18429353_18832486.depth.tsv
+[INFO] [16/34] Gene depth file not found or empty, generate now: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_CACNB2_NM_201596_chr10_18429353_18832486.depth.tsv
+[INFO] Generate gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_CACNB2_NM_201596_chr10_18429353_18832486.depth.tsv
+[INFO] Command: /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools depth -a -q 20 -r chr10:18429353-18832486 -G 1024 /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_CACNB2_NM_201596_chr10_18429353_18832486.depth.tsv
+[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [INFO] [16/34] Calculating gene/window depth from: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_CACNB2_NM_201596_chr10_18429353_18832486.depth.tsv
 [INFO] [16/34] Finished gene: CACNB2, Gene_Mean_Depth=54.0620
 [INFO] [17/34] Processing gene: MYPN NM_032578 chr10:69869245-69971774
-[INFO] [17/34] Reuse existing gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_MYPN_NM_032578_chr10_69869245_69971774.depth.tsv
+[INFO] [17/34] Gene depth file not found or empty, generate now: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_MYPN_NM_032578_chr10_69869245_69971774.depth.tsv
+[INFO] Generate gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_MYPN_NM_032578_chr10_69869245_69971774.depth.tsv
+[INFO] Command: /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools depth -a -q 20 -r chr10:69869245-69971774 -G 1024 /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_MYPN_NM_032578_chr10_69869245_69971774.depth.tsv
+[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [INFO] [17/34] Calculating gene/window depth from: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_MYPN_NM_032578_chr10_69869245_69971774.depth.tsv
 [INFO] [17/34] Finished gene: MYPN, Gene_Mean_Depth=53.3748
 [INFO] [18/34] Processing gene: VCL NM_014000 chr10:75757874-75879927
-[INFO] [18/34] Reuse existing gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_VCL_NM_014000_chr10_75757874_75879927.depth.tsv
+[INFO] [18/34] Gene depth file not found or empty, generate now: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_VCL_NM_014000_chr10_75757874_75879927.depth.tsv
+[INFO] Generate gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_VCL_NM_014000_chr10_75757874_75879927.depth.tsv
+[INFO] Command: /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools depth -a -q 20 -r chr10:75757874-75879927 -G 1024 /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_VCL_NM_014000_chr10_75757874_75879927.depth.tsv
+[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [INFO] [18/34] Calculating gene/window depth from: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_VCL_NM_014000_chr10_75757874_75879927.depth.tsv
 [INFO] [18/34] Finished gene: VCL, Gene_Mean_Depth=52.4989
 [INFO] [19/34] Processing gene: ANKRD1 NM_014391 chr10:92671853-92680844
-[INFO] [19/34] Reuse existing gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_ANKRD1_NM_014391_chr10_92671853_92680844.depth.tsv
+[INFO] [19/34] Gene depth file not found or empty, generate now: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_ANKRD1_NM_014391_chr10_92671853_92680844.depth.tsv
+[INFO] Generate gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_ANKRD1_NM_014391_chr10_92671853_92680844.depth.tsv
+[INFO] Command: /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools depth -a -q 20 -r chr10:92671853-92680844 -G 1024 /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_ANKRD1_NM_014391_chr10_92671853_92680844.depth.tsv
+[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [INFO] [19/34] Calculating gene/window depth from: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_ANKRD1_NM_014391_chr10_92671853_92680844.depth.tsv
 [INFO] [19/34] Finished gene: ANKRD1, Gene_Mean_Depth=54.8207
 [INFO] [20/34] Processing gene: RBM20 NM_001134363 chr10:112404094-112599226
-[INFO] [20/34] Reuse existing gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_RBM20_NM_001134363_chr10_112404094_112599226.depth.tsv
+[INFO] [20/34] Gene depth file not found or empty, generate now: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_RBM20_NM_001134363_chr10_112404094_112599226.depth.tsv
+[INFO] Generate gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_RBM20_NM_001134363_chr10_112404094_112599226.depth.tsv
+[INFO] Command: /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools depth -a -q 20 -r chr10:112404094-112599226 -G 1024 /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_RBM20_NM_001134363_chr10_112404094_112599226.depth.tsv
+[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [INFO] [20/34] Calculating gene/window depth from: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_RBM20_NM_001134363_chr10_112404094_112599226.depth.tsv
 [INFO] [20/34] Finished gene: RBM20, Gene_Mean_Depth=54.2503
 [INFO] [21/34] Processing gene: KCNQ1 NM_000218 chr11:2466238-2870335
-[INFO] [21/34] Reuse existing gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_KCNQ1_NM_000218_chr11_2466238_2870335.depth.tsv
+[INFO] [21/34] Gene depth file not found or empty, generate now: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_KCNQ1_NM_000218_chr11_2466238_2870335.depth.tsv
+[INFO] Generate gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_KCNQ1_NM_000218_chr11_2466238_2870335.depth.tsv
+[INFO] Command: /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools depth -a -q 20 -r chr11:2466238-2870335 -G 1024 /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_KCNQ1_NM_000218_chr11_2466238_2870335.depth.tsv
+[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [INFO] [21/34] Calculating gene/window depth from: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_KCNQ1_NM_000218_chr11_2466238_2870335.depth.tsv
 [INFO] [21/34] Finished gene: KCNQ1, Gene_Mean_Depth=48.4967
 [INFO] [22/34] Processing gene: CSRP3 NM_003476 chr11:19203577-19223530
-[INFO] [22/34] Reuse existing gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_CSRP3_NM_003476_chr11_19203577_19223530.depth.tsv
+[INFO] [22/34] Gene depth file not found or empty, generate now: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_CSRP3_NM_003476_chr11_19203577_19223530.depth.tsv
+[INFO] Generate gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_CSRP3_NM_003476_chr11_19203577_19223530.depth.tsv
+[INFO] Command: /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools depth -a -q 20 -r chr11:19203577-19223530 -G 1024 /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_CSRP3_NM_003476_chr11_19203577_19223530.depth.tsv
+[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [INFO] [22/34] Calculating gene/window depth from: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_CSRP3_NM_003476_chr11_19203577_19223530.depth.tsv
 [INFO] [22/34] Finished gene: CSRP3, Gene_Mean_Depth=56.9025
 [INFO] [23/34] Processing gene: CACNA1C NM_000719 chr12:2162153-2807116
-[INFO] [23/34] Reuse existing gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_CACNA1C_NM_000719_chr12_2162153_2807116.depth.tsv
+[INFO] [23/34] Gene depth file not found or empty, generate now: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_CACNA1C_NM_000719_chr12_2162153_2807116.depth.tsv
+[INFO] Generate gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_CACNA1C_NM_000719_chr12_2162153_2807116.depth.tsv
+[INFO] Command: /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools depth -a -q 20 -r chr12:2162153-2807116 -G 1024 /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_CACNA1C_NM_000719_chr12_2162153_2807116.depth.tsv
+[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [INFO] [23/34] Calculating gene/window depth from: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_CACNA1C_NM_000719_chr12_2162153_2807116.depth.tsv
 [INFO] [23/34] Finished gene: CACNA1C, Gene_Mean_Depth=53.9508
 [INFO] [24/34] Processing gene: TMPO NM_001032283 chr12:98909368-98944129
-[INFO] [24/34] Reuse existing gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_TMPO_NM_001032283_chr12_98909368_98944129.depth.tsv
+[INFO] [24/34] Gene depth file not found or empty, generate now: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_TMPO_NM_001032283_chr12_98909368_98944129.depth.tsv
+[INFO] Generate gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_TMPO_NM_001032283_chr12_98909368_98944129.depth.tsv
+[INFO] Command: /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools depth -a -q 20 -r chr12:98909368-98944129 -G 1024 /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_TMPO_NM_001032283_chr12_98909368_98944129.depth.tsv
+[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [INFO] [24/34] Calculating gene/window depth from: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_TMPO_NM_001032283_chr12_98909368_98944129.depth.tsv
 [INFO] [24/34] Finished gene: TMPO, Gene_Mean_Depth=54.5171
 [INFO] [25/34] Processing gene: MYH6 NM_002471 chr14:23851196-23877482
-[INFO] [25/34] Reuse existing gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_MYH6_NM_002471_chr14_23851196_23877482.depth.tsv
+[INFO] [25/34] Gene depth file not found or empty, generate now: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_MYH6_NM_002471_chr14_23851196_23877482.depth.tsv
+[INFO] Generate gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_MYH6_NM_002471_chr14_23851196_23877482.depth.tsv
+[INFO] Command: /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools depth -a -q 20 -r chr14:23851196-23877482 -G 1024 /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_MYH6_NM_002471_chr14_23851196_23877482.depth.tsv
+[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [INFO] [25/34] Calculating gene/window depth from: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_MYH6_NM_002471_chr14_23851196_23877482.depth.tsv
 [INFO] [25/34] Finished gene: MYH6, Gene_Mean_Depth=49.3283
 [INFO] [26/34] Processing gene: ALPK3 NM_020778 chr15:85360587-85416710
-[INFO] [26/34] Reuse existing gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_ALPK3_NM_020778_chr15_85360587_85416710.depth.tsv
+[INFO] [26/34] Gene depth file not found or empty, generate now: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_ALPK3_NM_020778_chr15_85360587_85416710.depth.tsv
+[INFO] Generate gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_ALPK3_NM_020778_chr15_85360587_85416710.depth.tsv
+[INFO] Command: /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools depth -a -q 20 -r chr15:85360587-85416710 -G 1024 /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_ALPK3_NM_020778_chr15_85360587_85416710.depth.tsv
+[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [INFO] [26/34] Calculating gene/window depth from: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_ALPK3_NM_020778_chr15_85360587_85416710.depth.tsv
 [INFO] [26/34] Finished gene: ALPK3, Gene_Mean_Depth=52.2445
 [INFO] [27/34] Processing gene: TCAP NM_003673 chr17:37821602-37822807
-[INFO] [27/34] Reuse existing gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_TCAP_NM_003673_chr17_37821602_37822807.depth.tsv
+[INFO] [27/34] Gene depth file not found or empty, generate now: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_TCAP_NM_003673_chr17_37821602_37822807.depth.tsv
+[INFO] Generate gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_TCAP_NM_003673_chr17_37821602_37822807.depth.tsv
+[INFO] Command: /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools depth -a -q 20 -r chr17:37821602-37822807 -G 1024 /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_TCAP_NM_003673_chr17_37821602_37822807.depth.tsv
+[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [INFO] [27/34] Calculating gene/window depth from: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_TCAP_NM_003673_chr17_37821602_37822807.depth.tsv
 [INFO] [27/34] Finished gene: TCAP, Gene_Mean_Depth=40.7993
 [INFO] [28/34] Processing gene: RPS6KB1 NM_003161 chr17:57970482-58027935
-[INFO] [28/34] Reuse existing gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_RPS6KB1_NM_003161_chr17_57970482_58027935.depth.tsv
+[INFO] [28/34] Gene depth file not found or empty, generate now: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_RPS6KB1_NM_003161_chr17_57970482_58027935.depth.tsv
+[INFO] Generate gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_RPS6KB1_NM_003161_chr17_57970482_58027935.depth.tsv
+[INFO] Command: /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools depth -a -q 20 -r chr17:57970482-58027935 -G 1024 /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_RPS6KB1_NM_003161_chr17_57970482_58027935.depth.tsv
+[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [INFO] [28/34] Calculating gene/window depth from: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_RPS6KB1_NM_003161_chr17_57970482_58027935.depth.tsv
 [INFO] [28/34] Finished gene: RPS6KB1, Gene_Mean_Depth=49.8293
 [INFO] [29/34] Processing gene: MYOM1 NM_003803 chr18:3066805-3219966
-[INFO] [29/34] Reuse existing gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_MYOM1_NM_003803_chr18_3066805_3219966.depth.tsv
+[INFO] [29/34] Gene depth file not found or empty, generate now: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_MYOM1_NM_003803_chr18_3066805_3219966.depth.tsv
+[INFO] Generate gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_MYOM1_NM_003803_chr18_3066805_3219966.depth.tsv
+[INFO] Command: /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools depth -a -q 20 -r chr18:3066805-3219966 -G 1024 /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_MYOM1_NM_003803_chr18_3066805_3219966.depth.tsv
+[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [INFO] [29/34] Calculating gene/window depth from: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_MYOM1_NM_003803_chr18_3066805_3219966.depth.tsv
 [INFO] [29/34] Finished gene: MYOM1, Gene_Mean_Depth=52.7321
 [INFO] [30/34] Processing gene: FHOD3 NM_001281740 chr18:33877676-34360183
-[INFO] [30/34] Reuse existing gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_FHOD3_NM_001281740_chr18_33877676_34360183.depth.tsv
+[INFO] [30/34] Gene depth file not found or empty, generate now: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_FHOD3_NM_001281740_chr18_33877676_34360183.depth.tsv
+[INFO] Generate gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_FHOD3_NM_001281740_chr18_33877676_34360183.depth.tsv
+[INFO] Command: /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools depth -a -q 20 -r chr18:33877676-34360183 -G 1024 /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_FHOD3_NM_001281740_chr18_33877676_34360183.depth.tsv
+[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [INFO] [30/34] Calculating gene/window depth from: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_FHOD3_NM_001281740_chr18_33877676_34360183.depth.tsv
 [INFO] [30/34] Finished gene: FHOD3, Gene_Mean_Depth=54.3196
 [INFO] [31/34] Processing gene: CALR3 NM_145046 chr19:16589872-16606978
-[INFO] [31/34] Reuse existing gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_CALR3_NM_145046_chr19_16589872_16606978.depth.tsv
+[INFO] [31/34] Gene depth file not found or empty, generate now: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_CALR3_NM_145046_chr19_16589872_16606978.depth.tsv
+[INFO] Generate gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_CALR3_NM_145046_chr19_16589872_16606978.depth.tsv
+[INFO] Command: /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools depth -a -q 20 -r chr19:16589872-16606978 -G 1024 /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_CALR3_NM_145046_chr19_16589872_16606978.depth.tsv
+[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [INFO] [31/34] Calculating gene/window depth from: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_CALR3_NM_145046_chr19_16589872_16606978.depth.tsv
 [INFO] [31/34] Finished gene: CALR3, Gene_Mean_Depth=47.8651
 [INFO] [32/34] Processing gene: MYLK2 NM_033118 chr20:30407159-30422487
-[INFO] [32/34] Reuse existing gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_MYLK2_NM_033118_chr20_30407159_30422487.depth.tsv
+[INFO] [32/34] Gene depth file not found or empty, generate now: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_MYLK2_NM_033118_chr20_30407159_30422487.depth.tsv
+[INFO] Generate gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_MYLK2_NM_033118_chr20_30407159_30422487.depth.tsv
+[INFO] Command: /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools depth -a -q 20 -r chr20:30407159-30422487 -G 1024 /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_MYLK2_NM_033118_chr20_30407159_30422487.depth.tsv
+[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [INFO] [32/34] Calculating gene/window depth from: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_MYLK2_NM_033118_chr20_30407159_30422487.depth.tsv
 [INFO] [32/34] Finished gene: MYLK2, Gene_Mean_Depth=50.4783
 [INFO] [33/34] Processing gene: JPH2 NM_020433 chr20:42735230-42815828
-[INFO] [33/34] Reuse existing gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_JPH2_NM_020433_chr20_42735230_42815828.depth.tsv
+[INFO] [33/34] Gene depth file not found or empty, generate now: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_JPH2_NM_020433_chr20_42735230_42815828.depth.tsv
+[INFO] Generate gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_JPH2_NM_020433_chr20_42735230_42815828.depth.tsv
+[INFO] Command: /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools depth -a -q 20 -r chr20:42735230-42815828 -G 1024 /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_JPH2_NM_020433_chr20_42735230_42815828.depth.tsv
+[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [INFO] [33/34] Calculating gene/window depth from: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_JPH2_NM_020433_chr20_42735230_42815828.depth.tsv
 [INFO] [33/34] Finished gene: JPH2, Gene_Mean_Depth=49.7052
 [INFO] [34/34] Processing gene: TNNC2 NM_003279 chr20:44451853-44455951
-[INFO] [34/34] Reuse existing gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_TNNC2_NM_003279_chr20_44451853_44455951.depth.tsv
+[INFO] [34/34] Gene depth file not found or empty, generate now: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_TNNC2_NM_003279_chr20_44451853_44455951.depth.tsv
+[INFO] Generate gene depth file: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_TNNC2_NM_003279_chr20_44451853_44455951.depth.tsv
+[INFO] Command: /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools depth -a -q 20 -r chr20:44451853-44455951 -G 1024 /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_TNNC2_NM_003279_chr20_44451853_44455951.depth.tsv
+[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [INFO] [34/34] Calculating gene/window depth from: /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_TNNC2_NM_003279_chr20_44451853_44455951.depth.tsv
 [INFO] [34/34] Finished gene: TNNC2, Gene_Mean_Depth=48.6763
 [INFO] Window-based depth analysis finished
@@ -161,7 +263,7 @@
 [INFO] All window ratio output        : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.all_window_ratio.tsv
 [INFO] Del window output              : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.del_windows.tsv
 [INFO] Candidate output               : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.tsv
-[INFO] Gene depth files reused        : 34
-[INFO] Gene depth files generated     : 0
+[INFO] Gene depth files reused        : 0
+[INFO] Gene depth files generated     : 34
 [INFO] Del window number              : 167
 [INFO] Candidate number               : 9
