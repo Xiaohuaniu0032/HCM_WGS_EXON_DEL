@@ -34,10 +34,10 @@
 [W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
 [INFO] SA split-read extraction finished
-[INFO] Config                  : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/conf/hcm_exondel.example.conf
-[INFO] Project root            : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL
+[INFO] Config                  : /ehpcdata/fulongfei/git_repo/HCMExonDel/conf/hcm_exondel.example.conf
+[INFO] Project root            : /ehpcdata/fulongfei/git_repo/HCMExonDel
 [INFO] BAM                     : /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam
-[INFO] Output                  : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/02.split_reads/25B09089386.split_reads.tsv
+[INFO] Output                  : /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/02.split_reads/25B09089386.split_reads.tsv
 [INFO] Sample                  : 25B09089386
 [INFO] SAMTOOLS                : /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools
 [INFO] MIN_MAPQ                : 20

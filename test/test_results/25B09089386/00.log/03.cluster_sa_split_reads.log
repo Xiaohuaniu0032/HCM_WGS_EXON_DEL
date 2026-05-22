@@ -1,9 +1,9 @@
 [INFO] SA split-read clustering finished
-[INFO] Config                    : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/conf/hcm_exondel.example.conf
-[INFO] Input                     : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/02.split_reads/25B09089386.split_reads.tsv
-[INFO] PASS cluster output       : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/02.split_reads/25B09089386.split_reads.clusters.tsv
-[INFO] Failed cluster output     : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/02.split_reads/25B09089386.split_reads.failed_clusters.tsv
-[INFO] Supporting reads output   : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/02.split_reads/25B09089386.split_reads.supporting_reads.tsv
+[INFO] Config                    : /ehpcdata/fulongfei/git_repo/HCMExonDel/conf/hcm_exondel.example.conf
+[INFO] Input                     : /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/02.split_reads/25B09089386.split_reads.tsv
+[INFO] PASS cluster output       : /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/02.split_reads/25B09089386.split_reads.clusters.tsv
+[INFO] Failed cluster output     : /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/02.split_reads/25B09089386.split_reads.failed_clusters.tsv
+[INFO] Supporting reads output   : /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/02.split_reads/25B09089386.split_reads.supporting_reads.tsv
 [INFO] MIN_MAPQ                  : 20
 [INFO] SA_SPLIT_CLUSTER_WINDOW   : 20
 [INFO] SA_SPLIT_MIN_SUPPORT_READS: 5

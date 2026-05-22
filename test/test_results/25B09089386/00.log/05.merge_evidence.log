@@ -1,11 +1,11 @@
 [INFO] Merge evidence started
-[INFO] Config          : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/conf/hcm_exondel.example.conf
+[INFO] Config          : /ehpcdata/fulongfei/git_repo/HCMExonDel/conf/hcm_exondel.example.conf
 [INFO] Sample          : 25B09089386
-[INFO] Depth file      : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.tsv
-[INFO] Split file      : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/02.split_reads/25B09089386.split_reads.clusters.tsv
-[INFO] Discordant file : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/03.discordant_reads/25B09089386.discordant_reads.tsv
-[INFO] Main output     : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/04.candidates/25B09089386.merged_candidates.tsv
-[INFO] All output      : /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/04.candidates/25B09089386.merged_candidates.tsv.all.tsv
+[INFO] Depth file      : /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.tsv
+[INFO] Split file      : /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/02.split_reads/25B09089386.split_reads.clusters.tsv
+[INFO] Discordant file : /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/03.discordant_reads/25B09089386.discordant_reads.tsv
+[INFO] Main output     : /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/04.candidates/25B09089386.merged_candidates.tsv
+[INFO] All output      : /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/04.candidates/25B09089386.merged_candidates.tsv.all.tsv
 [INFO] Depth records loaded: 9
 [INFO] Split cluster records loaded: 7
 [INFO] Discordant records loaded: 2
