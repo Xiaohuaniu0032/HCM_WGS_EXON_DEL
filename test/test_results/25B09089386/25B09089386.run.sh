@@ -12,12 +12,13 @@ set -euo pipefail
 #
 # Workflow:
 #   1. gene_mean_depth
-#   2. extract_sa_split_reads
-#   3. cluster_sa_split_reads
-#   4. discordant_reads
-#   5. merge_evidence
-#   6. extract_candidate_gene_bam
-#   7. annotate_candidates
+#   2. plot_depth_ratio
+#   3. extract_sa_split_reads
+#   4. cluster_sa_split_reads
+#   5. discordant_reads
+#   6. merge_evidence
+#   7. extract_candidate_gene_bam
+#   8. annotate_candidates
 #
 # Important:
 #   merge_evidence.pl uses:
@@ -35,6 +36,9 @@ mkdir -p /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B0908
 
 echo "[INFO] Step 1: gene_mean_depth $(date)"
 /usr/bin/perl /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/bin/run_gene_mean_depth.pl --config /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/conf/hcm_exondel.example.conf --bam /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam --sample 25B09089386 --out /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.tsv > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/00.log/01.gene_mean_depth.log 2>&1
+
+echo "[INFO] Step 1b: plot_depth_ratio $(date)"
+python3 /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/bin/plot_depth_ratio.py --conf /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/conf/hcm_exondel.example.conf --input /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.all_window_ratio.tsv --output /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.depth_ratio.pdf > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/00.log/01b.plot_depth_ratio.log 2>&1
 
 echo "[INFO] Step 2: extract_sa_split_reads $(date)"
 /usr/bin/perl /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/bin/extract_sa_split_reads.pl --conf /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/conf/hcm_exondel.example.conf --bam /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam --sample 25B09089386 --out /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/02.split_reads/25B09089386.split_reads.tsv > /ehpcdata/fulongfei/git_repo/HCM_WGS_EXON_DEL/test/test_results/25B09089386/00.log/02.extract_sa_split_reads.log 2>&1

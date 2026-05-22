@@ -188,8 +188,8 @@ foreach my $item (@samples) {
 
 print "\n";
 print "[INFO] All sample shells generated successfully\n";
-print "[INFO] No sample_shell.list generated\n";
-print "[INFO] No qsub_command.list generated\n";
+#print "[INFO] No sample_shell.list generated\n";
+#print "[INFO] No qsub_command.list generated\n";
 print "\n";
 print "Run example:\n";
 print "  bash $outdir/SAMPLE/SAMPLE.run.sh\n\n";
@@ -814,12 +814,12 @@ sub print_summary {
     print "Samples                  : $args{sample_num}\n";
     print "Workflow                 : depth -> plot -> SA split -> SA cluster -> discordant -> merge -> gene BAM -> annotate\n";
     print "Generated output         : OUTDIR/SAMPLE/SAMPLE.run.sh\n";
-    print "sample_shell.list        : not generated\n";
-    print "qsub_command.list        : not generated\n";
-    print "Split input for merge    : *.split_reads.clusters.tsv\n";
-    print "Candidate gene BAM       : enabled\n";
-    print "Candidate gene BAM flank : default 0, strict gene coordinates\n";
-    print "Shell quoting style      : no single quotes, escape metacharacters only\n";
+    #print "sample_shell.list        : not generated\n";
+    #print "qsub_command.list        : not generated\n";
+    #print "Split input for merge    : *.split_reads.clusters.tsv\n";
+    #print "Candidate gene BAM       : enabled\n";
+    #print "Candidate gene BAM flank : default 0, strict gene coordinates\n";
+    #print "Shell quoting style      : no single quotes, escape metacharacters only\n";
     print "============================================================\n\n";
 }
 
