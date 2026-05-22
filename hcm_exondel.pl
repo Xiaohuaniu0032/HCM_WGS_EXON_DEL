@@ -153,7 +153,7 @@ foreach my $item (@samples) {
     my %OUT = (
         depth            => "$DIR{depth}/$sample.depth_candidates.tsv",
         all_window_ratio => "$DIR{depth}/$sample.depth_candidates.all_window_ratio.tsv",
-        depth_plot_pdf   => "$DIR{depth}/$sample.depth_candidates.depth_ratio.pdf",
+        depth_plot_pdf   => "$DIR{depth}/$sample.window_del.per_gene.pdf",
 
         split_raw        => "$DIR{split}/$sample.split_reads.tsv",
         split_cluster    => "$DIR{split}/$sample.split_reads.clusters.tsv",
