@@ -26,12 +26,13 @@ use File::Basename qw(dirname);
 #
 # Workflow:
 #   1. run_gene_mean_depth.pl
-#   2. extract_sa_split_reads.pl
-#   3. cluster_sa_split_reads.pl
-#   4. run_discordant_reads.pl
-#   5. merge_evidence.pl
-#   6. extract_candidate_gene_bam.pl
-#   7. annotate_candidates.pl
+#   2. plot_depth_ratio.py
+#   3. extract_sa_split_reads.pl
+#   4. cluster_sa_split_reads.pl
+#   5. run_discordant_reads.pl
+#   6. merge_evidence.pl
+#   7. extract_candidate_gene_bam.pl
+#   8. annotate_candidates.pl
 #
 # Output structure:
 #   OUTDIR/
@@ -116,6 +117,7 @@ $outdir = abs_path($outdir);
 
 my %SCRIPT = (
     depth         => "$Bin/bin/run_gene_mean_depth.pl",
+    plot_depth    => "$Bin/bin/plot_depth_ratio.py",
     split_extract => "$Bin/bin/extract_sa_split_reads.pl",
     split_cluster => "$Bin/bin/cluster_sa_split_reads.pl",
     discordant    => "$Bin/bin/run_discordant_reads.pl",
@@ -149,15 +151,17 @@ foreach my $item (@samples) {
     my %DIR = prepare_sample_dirs($outdir, $sample, $force);
 
     my %OUT = (
-        depth         => "$DIR{depth}/$sample.depth_candidates.tsv",
+        depth            => "$DIR{depth}/$sample.depth_candidates.tsv",
+        all_window_ratio => "$DIR{depth}/$sample.depth_candidates.all_window_ratio.tsv",
+        depth_plot_pdf   => "$DIR{depth}/$sample.depth_candidates.depth_ratio.pdf",
 
-        split_raw     => "$DIR{split}/$sample.split_reads.tsv",
-        split_cluster => "$DIR{split}/$sample.split_reads.clusters.tsv",
+        split_raw        => "$DIR{split}/$sample.split_reads.tsv",
+        split_cluster    => "$DIR{split}/$sample.split_reads.clusters.tsv",
 
-        discordant    => "$DIR{discordant}/$sample.discordant_reads.tsv",
+        discordant       => "$DIR{discordant}/$sample.discordant_reads.tsv",
 
-        merged        => "$DIR{candidate}/$sample.merged_candidates.tsv",
-        annotated     => "$DIR{report}/$sample.annotated_candidates.tsv",
+        merged           => "$DIR{candidate}/$sample.merged_candidates.tsv",
+        annotated        => "$DIR{report}/$sample.annotated_candidates.tsv",
     );
 
     my $sample_shell = "$DIR{sample}/$sample.run.sh";
@@ -260,6 +264,25 @@ sub write_sample_shell {
         "Step 1: gene_mean_depth",
         $cmd,
         "$dir_ref->{log}/01.gene_mean_depth.log"
+    );
+
+    # ------------------------------------------------------------
+    # Step 1b. Plot depth ratio
+    # ------------------------------------------------------------
+    $cmd = join(
+        " ",
+        "python3",
+        shell_quote($script_ref->{plot_depth}),
+        "--conf",   shell_quote($config),
+        "--input",  shell_quote($out_ref->{all_window_ratio}),
+        "--output", shell_quote($out_ref->{depth_plot_pdf}),
+    );
+
+    write_cmd(
+        $SH,
+        "Step 1b: plot_depth_ratio",
+        $cmd,
+        "$dir_ref->{log}/01b.plot_depth_ratio.log"
     );
 
     # ------------------------------------------------------------
@@ -424,12 +447,13 @@ set -euo pipefail
 #
 # Workflow:
 #   1. gene_mean_depth
-#   2. extract_sa_split_reads
-#   3. cluster_sa_split_reads
-#   4. discordant_reads
-#   5. merge_evidence
-#   6. extract_candidate_gene_bam
-#   7. annotate_candidates
+#   2. plot_depth_ratio
+#   3. extract_sa_split_reads
+#   4. cluster_sa_split_reads
+#   5. discordant_reads
+#   6. merge_evidence
+#   7. extract_candidate_gene_bam
+#   8. annotate_candidates
 #
 # Important:
 #   merge_evidence.pl uses:
@@ -788,7 +812,7 @@ sub print_summary {
     print "Outdir                   : $args{outdir}\n";
     print "Keep tmp                 : $args{keep_tmp}\n";
     print "Samples                  : $args{sample_num}\n";
-    print "Workflow                 : depth -> SA split -> SA cluster -> discordant -> merge -> gene BAM -> annotate\n";
+    print "Workflow                 : depth -> plot -> SA split -> SA cluster -> discordant -> merge -> gene BAM -> annotate\n";
     print "Generated output         : OUTDIR/SAMPLE/SAMPLE.run.sh\n";
     print "sample_shell.list        : not generated\n";
     print "qsub_command.list        : not generated\n";
@@ -866,12 +890,13 @@ Example:
 
 Workflow:
   1. run_gene_mean_depth.pl
-  2. extract_sa_split_reads.pl
-  3. cluster_sa_split_reads.pl
-  4. run_discordant_reads.pl
-  5. merge_evidence.pl
-  6. extract_candidate_gene_bam.pl
-  7. annotate_candidates.pl
+  2. plot_depth_ratio.py
+  3. extract_sa_split_reads.pl
+  4. cluster_sa_split_reads.pl
+  5. run_discordant_reads.pl
+  6. merge_evidence.pl
+  7. extract_candidate_gene_bam.pl
+  8. annotate_candidates.pl
 
 Output:
   OUTDIR/SAMPLE/SAMPLE.run.sh
@@ -887,6 +912,7 @@ Output structure:
       │   ├── SAMPLE.depth_candidates.del_windows.tsv
       │   ├── SAMPLE.depth_candidates.gene_mean_depth.tsv
       │   ├── SAMPLE.depth_candidates.window_depth.tsv
+      │   ├── SAMPLE.depth_candidates.depth_ratio.pdf
       │   └── SAMPLE.depth_candidates.gene_depth_files/
       ├── 02.split_reads/
       │   ├── SAMPLE.split_reads.tsv
@@ -927,5 +953,4 @@ Important:
 
 USAGE
 }
-
 

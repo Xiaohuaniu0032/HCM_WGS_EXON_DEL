@@ -5,27 +5,41 @@
 Plot window-level depth ratio for each gene.
 
 Input:
-    *.depth_candidates.all_window_ratio.tsv
+  *.depth_candidates.all_window_ratio.tsv
 
 Required columns:
-    Gene
-    Window_ID
-    Start
-    End
-    Depth_Ratio
-    Window_Status
+  Gene
+  Window_ID
+  Start
+  End
+  Depth_Ratio
+  Window_Status
 
 Output:
-    A multi-page PDF file.
-    Each page shows one gene.
+  A multi-page PDF file. Each page shows one gene.
 
 Rules:
-    - Window_Status == Normal_window: normal window
-    - Window_Status != Normal_window: highlighted in red
-    - Depth_Ratio cutoff is fixed at 0.65
+  - Window_Status == Normal_window: normal window
+  - Window_Status != Normal_window: highlighted in red
+  - Depth_Ratio cutoff is fixed at 0.65
+
+Important:
+  This script reads the config file first.
+
+  If ANALYZE_CORE_GENES_ONLY=1:
+      Plot depth ratio.
+
+  If ANALYZE_CORE_GENES_ONLY=0:
+      Skip plotting directly.
+
+Reason:
+  In whole-BAM mode, *.all_window_ratio.tsv can be very large,
+  and plotting all windows is not practical.
 """
 
 import argparse
+import sys
+
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
@@ -43,6 +57,12 @@ def parse_args():
     )
 
     parser.add_argument(
+        "--conf",
+        required=True,
+        help="Config file. ANALYZE_CORE_GENES_ONLY is read from this file."
+    )
+
+    parser.add_argument(
         "--input",
         required=True,
         help="Input all_window_ratio.tsv file."
@@ -57,6 +77,80 @@ def parse_args():
     return parser.parse_args()
 
 
+def read_config(conf_file):
+    conf = {}
+
+    try:
+        with open(conf_file, "r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.rstrip("\n").rstrip("\r")
+
+                if not line.strip():
+                    continue
+
+                if line.lstrip().startswith("#"):
+                    continue
+
+                # Remove simple inline comments:
+                # KEY=value  # comment
+                if "#" in line:
+                    line = line.split("#", 1)[0].rstrip()
+
+                if "=" not in line:
+                    continue
+
+                key, value = line.split("=", 1)
+
+                key = key.strip()
+                value = value.strip()
+
+                value = value.strip("'").strip('"')
+
+                if key:
+                    conf[key] = value
+
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Config file not found: {conf_file}")
+
+    except PermissionError:
+        raise PermissionError(f"Permission denied when reading config file: {conf_file}")
+
+    return conf
+
+
+def normalize_bool(value):
+    if value is None:
+        return False
+
+    value = str(value).strip().lower()
+
+    if value in {"1", "yes", "true", "on"}:
+        return True
+
+    if value in {"0", "no", "false", "off", ""}:
+        return False
+
+    return bool(value)
+
+
+def should_plot(conf_file):
+    conf = read_config(conf_file)
+
+    analyze_core_genes_only = normalize_bool(
+        conf.get("ANALYZE_CORE_GENES_ONLY", "0")
+    )
+
+    if not analyze_core_genes_only:
+        print(
+            "[INFO] ANALYZE_CORE_GENES_ONLY is not enabled. "
+            "Skip plot_depth_ratio.py to avoid plotting whole-BAM depth results."
+        )
+        return False
+
+    print("[INFO] ANALYZE_CORE_GENES_ONLY=1. Start plotting depth ratio.")
+    return True
+
+
 def check_required_columns(df):
     required_cols = [
         "Gene",
@@ -64,7 +158,7 @@ def check_required_columns(df):
         "Start",
         "End",
         "Depth_Ratio",
-        "Window_Status"
+        "Window_Status",
     ]
 
     missing = [col for col in required_cols if col not in df.columns]
@@ -94,7 +188,7 @@ def read_input(input_file):
             "Start",
             "End",
             "Depth_Ratio",
-            "Window_Status"
+            "Window_Status",
         ]
     ).copy()
 
@@ -142,8 +236,8 @@ def add_annotation_box(ax, text):
             boxstyle="round",
             facecolor="white",
             edgecolor="gray",
-            alpha=0.88
-        )
+            alpha=0.88,
+        ),
     )
 
 
@@ -159,6 +253,7 @@ def plot_one_gene(gene_df, gene_name):
     non_normal_df = gene_df[gene_df["Window_Status"] != NORMAL_STATUS]
 
     fig_width = max(10, min(24, len(gene_df) * 0.12))
+
     fig, ax = plt.subplots(figsize=(fig_width, 5.8))
 
     ax.plot(
@@ -167,7 +262,7 @@ def plot_one_gene(gene_df, gene_name):
         color="gray",
         linewidth=0.7,
         alpha=0.55,
-        zorder=1
+        zorder=1,
     )
 
     ax.scatter(
@@ -177,7 +272,7 @@ def plot_one_gene(gene_df, gene_name):
         color="lightgray",
         edgecolors="none",
         label="Normal window",
-        zorder=2
+        zorder=2,
     )
 
     ax.scatter(
@@ -188,7 +283,7 @@ def plot_one_gene(gene_df, gene_name):
         edgecolors="black",
         linewidths=0.3,
         label="Non-normal window",
-        zorder=3
+        zorder=3,
     )
 
     ax.axhline(
@@ -197,7 +292,7 @@ def plot_one_gene(gene_df, gene_name):
         linestyle="--",
         linewidth=1,
         alpha=0.75,
-        label=f"Depth ratio cutoff = {RATIO_CUTOFF}"
+        label=f"Depth ratio cutoff = {RATIO_CUTOFF}",
     )
 
     text = make_non_normal_text(non_normal_df)
@@ -206,8 +301,9 @@ def plot_one_gene(gene_df, gene_name):
     ax.set_title(
         f"{gene_name}: Window-level Depth Ratio",
         fontsize=14,
-        fontweight="bold"
+        fontweight="bold",
     )
+
     ax.set_xlabel("Window Order")
     ax.set_ylabel("Depth Ratio")
 
@@ -219,13 +315,13 @@ def plot_one_gene(gene_df, gene_name):
     ax.grid(
         axis="y",
         linestyle="--",
-        alpha=0.3
+        alpha=0.3,
     )
 
     ax.legend(
         loc="upper right",
         fontsize=8,
-        frameon=True
+        frameon=True,
     )
 
     if len(gene_df) <= 60:
@@ -233,12 +329,13 @@ def plot_one_gene(gene_df, gene_name):
         ax.set_xticklabels(
             gene_df["Window_ID"],
             rotation=90,
-            fontsize=6
+            fontsize=6,
         )
     else:
         ax.tick_params(axis="x", labelsize=7)
 
     plt.tight_layout()
+
     return fig
 
 
@@ -255,14 +352,18 @@ def write_per_gene_pdf(df, output_pdf):
 def main():
     args = parse_args()
 
+    if not should_plot(args.conf):
+        sys.exit(0)
+
     df = read_input(args.input)
 
     write_per_gene_pdf(
         df=df,
-        output_pdf=args.output
+        output_pdf=args.output,
     )
 
 
 if __name__ == "__main__":
     main()
 
+    
