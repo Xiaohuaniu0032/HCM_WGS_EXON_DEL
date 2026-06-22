@@ -120,6 +120,8 @@ my %SCRIPT = (
     plot_depth    => "$Bin/bin/plot_depth_ratio.py",
     split_extract => "$Bin/bin/extract_sa_split_reads.pl",
     split_cluster => "$Bin/bin/cluster_sa_split_reads.pl",
+    tlen_extract  => "$Bin/bin/extract_valid_tlen.pl",
+    tlen_plot     => "$Bin/bin/plot_tlen_distribution.py",
     discordant    => "$Bin/bin/run_discordant_reads.pl",
     merge         => "$Bin/bin/merge_evidence.pl",
     extract_bam   => "$Bin/bin/extract_candidate_gene_bam.pl",
@@ -157,6 +159,9 @@ foreach my $item (@samples) {
 
         split_raw        => "$DIR{split}/$sample.split_reads.tsv",
         split_cluster    => "$DIR{split}/$sample.split_reads.clusters.tsv",
+
+        valid_tlen       => "$DIR{discordant}/$sample.valid_tlen.tsv",
+        tlen_plot_pdf    => "$DIR{discordant}/$sample.tlen_distribution.pdf",
 
         discordant       => "$DIR{discordant}/$sample.discordant_reads.tsv",
 
@@ -322,6 +327,42 @@ sub write_sample_shell {
         "Step 3: cluster_sa_split_reads",
         $cmd,
         "$dir_ref->{log}/03.cluster_sa_split_reads.log"
+    );
+
+    # ------------------------------------------------------------
+    # Step 3b. Extract valid TLEN
+    # ------------------------------------------------------------
+    $cmd = join(
+        " ",
+        shell_quote($perl),
+        shell_quote($script_ref->{tlen_extract}),
+        shell_quote($bam),
+        shell_quote($out_ref->{valid_tlen}),
+    );
+
+    write_cmd(
+        $SH,
+        "Step 3b: extract_valid_tlen",
+        $cmd,
+        "$dir_ref->{log}/03b.extract_valid_tlen.log"
+    );
+
+    # ------------------------------------------------------------
+    # Step 3c. Plot TLEN distribution
+    # ------------------------------------------------------------
+    $cmd = join(
+        " ",
+        "python",
+        shell_quote($script_ref->{tlen_plot}),
+        shell_quote($out_ref->{valid_tlen}),
+        shell_quote($out_ref->{tlen_plot_pdf}),
+    );
+
+    write_cmd(
+        $SH,
+        "Step 3c: plot_tlen_distribution",
+        $cmd,
+        "$dir_ref->{log}/03c.plot_tlen_distribution.log"
     );
 
     # ------------------------------------------------------------

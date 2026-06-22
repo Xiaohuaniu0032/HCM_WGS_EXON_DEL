@@ -1,0 +1,14 @@
+$ sh cmd.sh
+[INFO] Reading HCM core genes...
+[INFO] Unique core genes: 35
+[INFO] Reading MANE Select transcript table...
+[INFO] MANE records loaded: 19338
+[WARN] MANE transcript not found for gene: MT-TI
+[INFO] Genes with MANE transcript: 34
+[INFO] Parsing GTF annotation...
+[INFO] Genes found in GTF: 34
+[INFO] Writing PDF: HCM_core_gene_structures.pdf
+[INFO] Done.
+[INFO] Output PDF: HCM_core_gene_structures.pdf
+[INFO] Missing report: HCM_core_gene_missing_report.tsv
+
