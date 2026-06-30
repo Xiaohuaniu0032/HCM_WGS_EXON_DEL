@@ -11,30 +11,46 @@ set -euo pipefail
 # Outdir    : /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386
 #
 # Workflow:
-#   1. gene_mean_depth
-#   2. plot_depth_ratio
-#   3. extract_sa_split_reads
-#   4. cluster_sa_split_reads
-#   5. discordant_reads
-#   6. merge_evidence
-#   7. extract_candidate_gene_bam
-#   8. annotate_candidates
+#   1.  gene_mean_depth
+#   1b. cusum_depth_del
+#   1c. calc_depth_ratio
+#   1d. plot_depth_ratio
+#   2.  extract_sa_split_reads
+#   3.  cluster_sa_split_reads
+#   3b. extract_valid_tlen
+#   3c. plot_tlen_distribution
+#   4.  discordant_reads
+#   5.  merge_evidence
+#   6.  extract_candidate_gene_bam
+#   7.  annotate_candidates
 ############################################################
 
 echo "[INFO] Start sample: 25B09089386 $(date)"
-mkdir -p /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/00.log /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/01.depth /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/02.split_reads /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/03.discordant_reads /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/04.candidates /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/05.gene_bam /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/06.report /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/tmp
+mkdir -p /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/00.log /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/01.depth /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.cusum /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.base_depth_ratio /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/02.split_reads /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/03.discordant_reads /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/04.candidates /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/05.gene_bam /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/06.report /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/tmp
 
 echo "[INFO] Step 1: gene_mean_depth $(date)"
 /usr/bin/perl /ehpcdata/fulongfei/git_repo/HCMExonDel/bin/run_gene_mean_depth.pl --config /ehpcdata/fulongfei/git_repo/HCMExonDel/conf/hcm_exondel.example.conf --bam /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam --sample 25B09089386 --out /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.tsv > /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/00.log/01.gene_mean_depth.log 2>&1
 
-echo "[INFO] Step 1b: plot_depth_ratio $(date)"
-python3 /ehpcdata/fulongfei/git_repo/HCMExonDel/bin/plot_depth_ratio.py --conf /ehpcdata/fulongfei/git_repo/HCMExonDel/conf/hcm_exondel.example.conf --input /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.all_window_ratio.tsv --output /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/01.depth/25B09089386.window_del.per_gene.pdf > /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/00.log/01b.plot_depth_ratio.log 2>&1
+echo "[INFO] Step 1b: cusum_depth_del $(date)"
+bash /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/tmp/25B09089386.step1b.cusum_depth_del.sh > /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/00.log/01b.cusum_depth_del.log 2>&1
+
+echo "[INFO] Step 1c: calc_depth_ratio $(date)"
+bash /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/tmp/25B09089386.step1c.calc_depth_ratio.sh > /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/00.log/01c.calc_depth_ratio.log 2>&1
+
+echo "[INFO] Step 1d: plot_depth_ratio $(date)"
+python3 /ehpcdata/fulongfei/git_repo/HCMExonDel/bin/plot_depth_ratio.py --conf /ehpcdata/fulongfei/git_repo/HCMExonDel/conf/hcm_exondel.example.conf --input /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.all_window_ratio.tsv --output /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/01.depth/25B09089386.window_del.per_gene.pdf > /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/00.log/01d.plot_depth_ratio.log 2>&1
 
 echo "[INFO] Step 2: extract_sa_split_reads $(date)"
 /usr/bin/perl /ehpcdata/fulongfei/git_repo/HCMExonDel/bin/extract_sa_split_reads.pl --conf /ehpcdata/fulongfei/git_repo/HCMExonDel/conf/hcm_exondel.example.conf --bam /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam --sample 25B09089386 --out /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/02.split_reads/25B09089386.split_reads.tsv > /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/00.log/02.extract_sa_split_reads.log 2>&1
 
 echo "[INFO] Step 3: cluster_sa_split_reads $(date)"
 /usr/bin/perl /ehpcdata/fulongfei/git_repo/HCMExonDel/bin/cluster_sa_split_reads.pl --conf /ehpcdata/fulongfei/git_repo/HCMExonDel/conf/hcm_exondel.example.conf --input /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/02.split_reads/25B09089386.split_reads.tsv --outfile /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/02.split_reads/25B09089386.split_reads.clusters.tsv > /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/00.log/03.cluster_sa_split_reads.log 2>&1
+
+echo "[INFO] Step 3b: extract_valid_tlen $(date)"
+/usr/bin/perl /ehpcdata/fulongfei/git_repo/HCMExonDel/bin/extract_valid_tlen.pl /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/03.discordant_reads/25B09089386.valid_tlen.tsv > /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/00.log/03b.extract_valid_tlen.log 2>&1
+
+echo "[INFO] Step 3c: plot_tlen_distribution $(date)"
+python /ehpcdata/fulongfei/git_repo/HCMExonDel/bin/plot_tlen_distribution.py /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/03.discordant_reads/25B09089386.valid_tlen.tsv /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/03.discordant_reads/25B09089386.tlen_distribution.pdf > /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/00.log/03c.plot_tlen_distribution.log 2>&1
 
 echo "[INFO] Step 4: discordant_reads $(date)"
 /usr/bin/perl /ehpcdata/fulongfei/git_repo/HCMExonDel/bin/run_discordant_reads.pl --config /ehpcdata/fulongfei/git_repo/HCMExonDel/conf/hcm_exondel.example.conf --bam /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam --sample 25B09089386 --out /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/03.discordant_reads/25B09089386.discordant_reads.tsv > /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/00.log/04.discordant_reads.log 2>&1
@@ -52,6 +68,9 @@ rm -rf /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/tmp
 
 echo "[INFO] Finished sample: 25B09089386 $(date)"
 echo "[INFO] Depth candidates       : /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.tsv"
+echo "[INFO] CUSUM depth calls      : /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.cusum.all.tsv"
+echo "[INFO] Base depth ratio       : /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.base_depth_ratio.all.tsv"
+echo "[INFO] Base depth summary     : /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.base_depth.summary.all.tsv"
 echo "[INFO] Raw split reads        : /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/02.split_reads/25B09089386.split_reads.tsv"
 echo "[INFO] Split clusters        : /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/02.split_reads/25B09089386.split_reads.clusters.tsv"
 echo "[INFO] Discordant candidates : /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/03.discordant_reads/25B09089386.discordant_reads.tsv"

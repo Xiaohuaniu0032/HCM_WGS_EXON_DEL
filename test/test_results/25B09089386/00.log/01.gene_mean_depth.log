@@ -3,9 +3,9 @@
 [INFO] BAM                            : /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam
 [INFO] Config                         : /ehpcdata/fulongfei/git_repo/HCMExonDel/conf/hcm_exondel.example.conf
 [INFO] Gene coordinate file           : /ehpcdata/fulongfei/git_repo/HCMExonDel/db/exon_annotation_bed/RefSeq_MANE_Select.gene.txt
-[INFO] WINDOW_SIZE                    : 1000
-[INFO] WINDOW_STEP                    : 500
-[INFO] MIN_WINDOW_SIZE                : 100
+[INFO] WINDOW_SIZE                    : 500
+[INFO] WINDOW_STEP                    : 200
+[INFO] MIN_WINDOW_SIZE                : 200
 [INFO] MIN_GENE_MEAN_DEPTH            : 20
 [INFO] MIN_MAPQ                       : 20
 [INFO] EXCLUDE_DUPLICATES             : 1
@@ -17,7 +17,7 @@
 [INFO] Core genes loaded              : 35
 [INFO] Gene classifications loaded    : 35
 [INFO] Gene regions retained          : 34
-[INFO] Total windows generated        : 9674
+[INFO] Total windows generated        : 24144
 [INFO] [1/34] Processing gene: TRIM63 NM_032588 chr1:26377792-26394121
 [INFO] [1/34] Reuse existing gene depth file: /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_TRIM63_NM_032588_chr1_26377792_26394121.depth.tsv
 [INFO] [1/34] Calculating gene/window depth from: /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.gene_depth_files/25B09089386_TRIM63_NM_032588_chr1_26377792_26394121.depth.tsv
@@ -163,5 +163,5 @@
 [INFO] Candidate output               : /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.tsv
 [INFO] Gene depth files reused        : 34
 [INFO] Gene depth files generated     : 0
-[INFO] Del window number              : 167
-[INFO] Candidate number               : 9
+[INFO] Del window number              : 878
+[INFO] Candidate number               : 103
