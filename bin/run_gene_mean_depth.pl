@@ -1,9 +1,8 @@
 #!/usr/bin/env perl
 # -*- coding: utf-8 -*-
-
 use strict;
 use warnings;
-use Getopt::Long;
+use Getopt::Long qw(GetOptions);
 use File::Basename qw(dirname);
 use File::Path qw(make_path);
 use Cwd qw(abs_path);
@@ -15,55 +14,53 @@ STDERR->autoflush(1);
 # ============================================================
 # run_gene_mean_depth.pl
 #
-# Function:
+# Purpose:
 #   Window-based depth-ratio analysis for exon-level deletion
-#   detection in HCM-related genes.
+#   detection in HCM core genes.
 #
-# Main design:
-#   1. Gene regions are read from REFSEQ_MANE_SELECT_GENE_TXT.
-#   2. By default, only genes in HCM_CORE_GENE_LIST are analyzed.
-#   3. Coordinates are 1-based closed intervals.
-#   4. For each gene, samtools depth is called only once.
-#   5. If a per-gene depth file already exists and is non-empty,
-#      it will be reused automatically.
-#   6. Gene mean depth and window mean depth are calculated
-#      from per-gene base-level depth file.
-#   7. Window depth is calculated using prefix sum for speed.
-#   8. A window is considered deletion-supporting when:
+# Pipeline logic:
+#   1. HCMExonDel only analyzes HCM core genes.
+#   2. This script always reads HCM_CORE_GENE_LIST and filters
+#      REFSEQ_MANE_SELECT_GENE_TXT to those core genes.
+#   3. The input BAM is expected to be SAMPLE.target.bam generated
+#      by extract_target_bam.pl.
+#   4. For each core gene, samtools depth is called once.
+#   5. Gene mean depth and window mean depth are calculated from
+#      per-gene base-level depth files.
+#   6. Window depth is calculated using prefix sums.
+#   7. A window is deletion-supporting when:
 #        Depth_Ratio <= DEL_DEPTH_RATIO_CUTOFF
-#   9. A final depth candidate is reported only when at least:
+#   8. A depth candidate is reported when at least
 #        MIN_CONSECUTIVE_DEL_WINDOWS
 #      consecutive deletion-supporting windows are observed.
 #
-# Required input:
+# Required command-line arguments:
 #   --config
 #   --bam
 #   --sample
 #   --out
 #
-# Required config:
+# Required config parameters:
 #   SAMTOOLS
 #   REFSEQ_MANE_SELECT_GENE_TXT
-#
-# Recommended config:
-#   ANALYZE_CORE_GENES_ONLY=1
 #   HCM_CORE_GENE_LIST
-#   WINDOW_SIZE=1000
-#   WINDOW_STEP=500
-#   MIN_WINDOW_SIZE=100
-#   MIN_GENE_MEAN_DEPTH=20
-#   MIN_MAPQ=20
-#   EXCLUDE_DUPLICATES=1
-#   DEL_DEPTH_RATIO_CUTOFF=0.65
-#   MIN_CONSECUTIVE_DEL_WINDOWS=3
-#   KEEP_GENE_DEPTH_FILE=1
+#   WINDOW_SIZE
+#   WINDOW_STEP
+#   MIN_WINDOW_SIZE
+#   MIN_GENE_MEAN_DEPTH
+#   MIN_MAPQ
+#   EXCLUDE_DUPLICATES
+#   DEL_DEPTH_RATIO_CUTOFF
+#   MIN_CONSECUTIVE_DEL_WINDOWS
+#   KEEP_GENE_DEPTH_FILE
 #
-# Output:
+# Outputs:
 #   1. *.gene_mean_depth.tsv
 #   2. *.window_depth.tsv
 #   3. *.all_window_ratio.tsv
 #   4. *.del_windows.tsv
 #   5. *.depth_candidates.tsv
+#   6. *.gene_depth_files/*.depth.tsv, if KEEP_GENE_DEPTH_FILE=1
 # ============================================================
 
 my $config;
@@ -85,142 +82,156 @@ if ($help) {
     exit 0;
 }
 
-die usage() unless $config && $bam && $sample && $out;
+die usage()
+    unless defined $config
+        && defined $bam
+        && defined $sample
+        && defined $out;
 
-$config = abs_path($config);
-$bam    = abs_path($bam);
+# ------------------------------------------------------------
+# Validate runtime I/O
+# ------------------------------------------------------------
+$config = abs_path($config) if -e $config;
+die "[ERROR] Config file not found: $config\n"
+    unless defined $config && -s $config;
+die "[ERROR] Config path must be absolute after resolution: $config\n"
+    unless $config =~ m{^/};
 
-die "[ERROR] Config file not found: $config\n" unless $config && -s $config;
-die "[ERROR] BAM file not found: $bam\n" unless $bam && -s $bam;
+$bam = abs_path($bam) if -e $bam;
+die "[ERROR] BAM file not found: $bam\n"
+    unless defined $bam && -s $bam;
+die "[ERROR] BAM path must be absolute after resolution: $bam\n"
+    unless $bam =~ m{^/};
+die "[ERROR] BAM file must end with .bam: $bam\n"
+    unless $bam =~ /\.bam$/i;
 
-my %CONF = read_config($config);
+check_bam_index($bam);
+
+die "[ERROR] Invalid sample name: $sample\n"
+  . "        Sample name can only contain letters, numbers, dot, underscore and hyphen.\n"
+    unless defined $sample && $sample =~ /^[A-Za-z0-9_.-]+$/;
+
+die "[ERROR] Output path must be absolute: $out\n"
+    unless defined $out && $out =~ m{^/};
+
+my $outdir = dirname($out);
+make_path($outdir) unless -d $outdir;
+die "[ERROR] Cannot create output directory: $outdir\n"
+    unless -d $outdir;
 
 # ------------------------------------------------------------
 # Config parameters
 # ------------------------------------------------------------
+my %CONF = read_config($config);
 
-my $samtools = get_conf(\%CONF, "SAMTOOLS", "samtools");
-
-my $gene_txt = get_conf(\%CONF, "REFSEQ_MANE_SELECT_GENE_TXT", "");
-$gene_txt = resolve_path_by_config($gene_txt, $config);
-
-die "[ERROR] REFSEQ_MANE_SELECT_GENE_TXT file not found: $gene_txt\n"
-    unless $gene_txt && -s $gene_txt;
-
-my $analyze_core_only = get_conf(\%CONF, "ANALYZE_CORE_GENES_ONLY", 1);
-
-my %core_gene;
-my %gene_classification;
-my $core_gene_list = get_conf(\%CONF, "HCM_CORE_GENE_LIST", "");
-
-if ($analyze_core_only) {
-    die "[ERROR] HCM_CORE_GENE_LIST is required when ANALYZE_CORE_GENES_ONLY=1\n"
-        unless defined $core_gene_list && $core_gene_list ne "";
-
-    $core_gene_list = resolve_path_by_config($core_gene_list, $config);
-
-    die "[ERROR] HCM core gene list file not found: $core_gene_list\n"
-        unless $core_gene_list && -s $core_gene_list;
-
-    my ($core_gene_ref, $gene_classification_ref) = read_core_gene_list($core_gene_list);
-
-    %core_gene           = %{$core_gene_ref};
-    %gene_classification = %{$gene_classification_ref};
+if (exists $CONF{ANALYZE_CORE_GENES_ONLY}) {
+    die "[ERROR] ANALYZE_CORE_GENES_ONLY has been removed.\n"
+      . "        run_gene_mean_depth.pl now always analyzes HCM core genes from HCM_CORE_GENE_LIST.\n"
+      . "        Please delete ANALYZE_CORE_GENES_ONLY from the config file.\n";
 }
 
-my $window_size     = get_conf(\%CONF, "WINDOW_SIZE", 1000);
-my $window_step     = get_conf(\%CONF, "WINDOW_STEP", 500);
-my $min_window_size = get_conf(\%CONF, "MIN_WINDOW_SIZE", 100);
+my $project_root = detect_project_root($config);
 
-my $min_gene_mean_depth = get_conf(\%CONF, "MIN_GENE_MEAN_DEPTH", 20);
+my $samtools = get_conf_required(\%CONF, "SAMTOOLS");
+check_executable($samtools, "SAMTOOLS");
 
-# Unified read-level filters.
-# MIN_MAPQ and EXCLUDE_DUPLICATES are shared by depth,
-# split-read and discordant-read modules.
-my $min_mapq    = get_conf(\%CONF, "MIN_MAPQ", 20);
-my $exclude_dup = get_conf(\%CONF, "EXCLUDE_DUPLICATES", 1);
+my $gene_txt = resolve_config_path(
+    get_conf_required(\%CONF, "REFSEQ_MANE_SELECT_GENE_TXT"),
+    $project_root
+);
 
-my $del_depth_ratio_cutoff       = get_conf(\%CONF, "DEL_DEPTH_RATIO_CUTOFF", 0.65);
-my $min_consecutive_del_windows  = get_conf(\%CONF, "MIN_CONSECUTIVE_DEL_WINDOWS", 3);
+die "[ERROR] REFSEQ_MANE_SELECT_GENE_TXT file not found: $gene_txt\n"
+    unless -s $gene_txt;
 
-# Default is 1 because existing gene depth files are reused automatically.
-my $keep_depth_file = get_conf(\%CONF, "KEEP_GENE_DEPTH_FILE", 1);
+my $core_gene_list = resolve_config_path(
+    get_conf_required(\%CONF, "HCM_CORE_GENE_LIST"),
+    $project_root
+);
 
-check_positive_integer("WINDOW_SIZE", $window_size);
-check_positive_integer("WINDOW_STEP", $window_step);
-check_positive_integer("MIN_WINDOW_SIZE", $min_window_size);
-check_non_negative_number("MIN_GENE_MEAN_DEPTH", $min_gene_mean_depth);
-check_non_negative_integer("MIN_MAPQ", $min_mapq);
-check_binary_flag("EXCLUDE_DUPLICATES", $exclude_dup);
-check_numeric_range("DEL_DEPTH_RATIO_CUTOFF", $del_depth_ratio_cutoff, 0, 1);
-check_positive_integer("MIN_CONSECUTIVE_DEL_WINDOWS", $min_consecutive_del_windows);
-check_binary_flag("KEEP_GENE_DEPTH_FILE", $keep_depth_file);
+die "[ERROR] HCM_CORE_GENE_LIST file not found: $core_gene_list\n"
+    unless -s $core_gene_list;
+
+my $window_size = get_conf_required(\%CONF, "WINDOW_SIZE");
+my $window_step = get_conf_required(\%CONF, "WINDOW_STEP");
+my $min_window_size = get_conf_required(\%CONF, "MIN_WINDOW_SIZE");
+my $min_gene_mean_depth = get_conf_required(\%CONF, "MIN_GENE_MEAN_DEPTH");
+my $min_mapq = get_conf_required(\%CONF, "MIN_MAPQ");
+my $exclude_dup = get_conf_required(\%CONF, "EXCLUDE_DUPLICATES");
+my $del_depth_ratio_cutoff = get_conf_required(\%CONF, "DEL_DEPTH_RATIO_CUTOFF");
+my $min_consecutive_del_windows = get_conf_required(\%CONF, "MIN_CONSECUTIVE_DEL_WINDOWS");
+my $keep_depth_file = get_conf_required(\%CONF, "KEEP_GENE_DEPTH_FILE");
+
+validate_positive_integer("WINDOW_SIZE", $window_size);
+validate_positive_integer("WINDOW_STEP", $window_step);
+validate_positive_integer("MIN_WINDOW_SIZE", $min_window_size);
+validate_nonnegative_number("MIN_GENE_MEAN_DEPTH", $min_gene_mean_depth);
+validate_nonnegative_integer("MIN_MAPQ", $min_mapq);
+validate_bool_01("EXCLUDE_DUPLICATES", $exclude_dup);
+validate_fraction_0_1("DEL_DEPTH_RATIO_CUTOFF", $del_depth_ratio_cutoff);
+validate_positive_integer("MIN_CONSECUTIVE_DEL_WINDOWS", $min_consecutive_del_windows);
+validate_bool_01("KEEP_GENE_DEPTH_FILE", $keep_depth_file);
 
 # ------------------------------------------------------------
 # Output files
 # ------------------------------------------------------------
-
-my $outdir = dirname($out);
-make_path($outdir) unless -d $outdir;
-
 my $prefix = $out;
-$prefix =~ s/\.tsv$//;
+$prefix =~ s/\.tsv$//i;
 
 my $depth_dir = $prefix . ".gene_depth_files";
 make_path($depth_dir) unless -d $depth_dir;
 
-my $gene_depth_out   = $prefix . ".gene_mean_depth.tsv";
+my $gene_depth_out  = $prefix . ".gene_mean_depth.tsv";
 my $window_depth_out = $prefix . ".window_depth.tsv";
-my $all_ratio_out    = $prefix . ".all_window_ratio.tsv";
-my $del_window_out   = $prefix . ".del_windows.tsv";
+my $all_ratio_out   = $prefix . ".all_window_ratio.tsv";
+my $del_window_out  = $prefix . ".del_windows.tsv";
 
-# ============================================================
-# Step 1. Read gene regions
-# ============================================================
-
-my @genes = read_gene_txt(
-    file               => $gene_txt,
-    analyze_core_only  => $analyze_core_only,
-    core_gene_ref      => \%core_gene,
-    classification_ref => \%gene_classification,
+# ------------------------------------------------------------
+# Read core gene list and gene regions
+# ------------------------------------------------------------
+my ($core_gene_ref, $classification_ref) = read_core_gene_list($core_gene_list);
+my @genes = read_core_gene_regions(
+    gene_txt           => $gene_txt,
+    core_gene_ref      => $core_gene_ref,
+    classification_ref => $classification_ref,
 );
 
-die "[ERROR] No valid gene regions found in: $gene_txt\n" unless @genes;
+die "[ERROR] No core gene regions found in REFSEQ_MANE_SELECT_GENE_TXT: $gene_txt\n"
+    unless @genes;
 
-print "[INFO] Window-based depth analysis started\n";
-print "[INFO] Sample                         : $sample\n";
-print "[INFO] BAM                            : $bam\n";
-print "[INFO] Config                         : $config\n";
-print "[INFO] Gene coordinate file           : $gene_txt\n";
-print "[INFO] WINDOW_SIZE                    : $window_size\n";
-print "[INFO] WINDOW_STEP                    : $window_step\n";
-print "[INFO] MIN_WINDOW_SIZE                : $min_window_size\n";
-print "[INFO] MIN_GENE_MEAN_DEPTH            : $min_gene_mean_depth\n";
-print "[INFO] MIN_MAPQ                       : $min_mapq\n";
-print "[INFO] EXCLUDE_DUPLICATES             : $exclude_dup\n";
-print "[INFO] DEL_DEPTH_RATIO_CUTOFF         : $del_depth_ratio_cutoff\n";
-print "[INFO] MIN_CONSECUTIVE_DEL_WINDOWS    : $min_consecutive_del_windows\n";
-print "[INFO] KEEP_GENE_DEPTH_FILE           : $keep_depth_file\n";
+my %observed_gene = map { $_->{gene} => 1 } @genes;
+my @missing_genes = grep { !exists $observed_gene{$_} } sort keys %{$core_gene_ref};
 
-if ($analyze_core_only) {
-    print "[INFO] ANALYZE_CORE_GENES_ONLY        : 1\n";
-    print "[INFO] Core gene list                 : $core_gene_list\n";
-    print "[INFO] Core genes loaded              : " . scalar(keys %core_gene) . "\n";
-    print "[INFO] Gene classifications loaded    : " . scalar(keys %gene_classification) . "\n";
-    print "[INFO] Gene regions retained          : " . scalar(@genes) . "\n";
-} else {
-    print "[INFO] ANALYZE_CORE_GENES_ONLY        : 0\n";
-    print "[INFO] Gene regions retained          : " . scalar(@genes) . "\n";
+if (@missing_genes) {
+    die "[ERROR] The following genes in HCM_CORE_GENE_LIST were not found in REFSEQ_MANE_SELECT_GENE_TXT:\n"
+      . join("\n", map { "        $_" } @missing_genes)
+      . "\n";
 }
 
-# ============================================================
-# Step 2. Generate windows
-# ============================================================
+print "[INFO] Window-based depth analysis started\n";
+print "[INFO] Sample : $sample\n";
+print "[INFO] BAM : $bam\n";
+print "[INFO] Config : $config\n";
+print "[INFO] Gene coordinate file : $gene_txt\n";
+print "[INFO] HCM core gene list : $core_gene_list\n";
+print "[INFO] HCM core genes loaded : " . scalar(keys %{$core_gene_ref}) . "\n";
+print "[INFO] Gene regions retained : " . scalar(@genes) . "\n";
+print "[INFO] WINDOW_SIZE : $window_size\n";
+print "[INFO] WINDOW_STEP : $window_step\n";
+print "[INFO] MIN_WINDOW_SIZE : $min_window_size\n";
+print "[INFO] MIN_GENE_MEAN_DEPTH : $min_gene_mean_depth\n";
+print "[INFO] MIN_MAPQ : $min_mapq\n";
+print "[INFO] EXCLUDE_DUPLICATES : $exclude_dup\n";
+print "[INFO] DEL_DEPTH_RATIO_CUTOFF : $del_depth_ratio_cutoff\n";
+print "[INFO] MIN_CONSECUTIVE_DEL_WINDOWS : $min_consecutive_del_windows\n";
+print "[INFO] KEEP_GENE_DEPTH_FILE : $keep_depth_file\n";
 
+# ------------------------------------------------------------
+# Generate windows
+# ------------------------------------------------------------
 my @windows;
 my %gene_windows;
 
-foreach my $gene (@genes) {
+for my $gene (@genes) {
     my $gkey = gene_key($gene);
 
     my @gene_windows = generate_windows(
@@ -231,19 +242,26 @@ foreach my $gene (@genes) {
         min_window_size => $min_window_size,
     );
 
+    if (!@gene_windows) {
+        warn "[WARNING] No window generated for gene "
+          . $gene->{gene} . " "
+          . $gene->{transcript} . " "
+          . $gene->{chr} . ":" . $gene->{start} . "-" . $gene->{end}
+          . ". Please check WINDOW_SIZE/MIN_WINDOW_SIZE.\n";
+    }
+
     push @windows, @gene_windows;
     $gene_windows{$gkey} = \@gene_windows;
 }
 
-die "[ERROR] No windows generated. Please check gene TXT and window parameters\n"
+die "[ERROR] No windows generated. Please check gene coordinates and window parameters.\n"
     unless @windows;
 
-print "[INFO] Total windows generated        : " . scalar(@windows) . "\n";
+print "[INFO] Total windows generated : " . scalar(@windows) . "\n";
 
-# ============================================================
-# Step 3. Generate or reuse per-gene depth file and calculate depths
-# ============================================================
-
+# ------------------------------------------------------------
+# Generate or reuse per-gene depth files and calculate depths
+# ------------------------------------------------------------
 my %gene_mean_depth;
 my %gene_total_length;
 my %window_mean_depth;
@@ -254,11 +272,10 @@ my $generated_depth_file_count = 0;
 my $gene_index = 0;
 my $gene_total = scalar(@genes);
 
-foreach my $gene (@genes) {
+for my $gene (@genes) {
     $gene_index++;
 
     my $gkey = gene_key($gene);
-
     my $depth_file = make_gene_depth_filename(
         depth_dir => $depth_dir,
         sample    => $sample,
@@ -266,18 +283,16 @@ foreach my $gene (@genes) {
     );
 
     print "[INFO] [$gene_index/$gene_total] Processing gene: "
-        . $gene->{gene} . " "
-        . $gene->{transcript} . " "
-        . $gene->{chr} . ":"
-        . $gene->{start} . "-"
-        . $gene->{end} . "\n";
+      . $gene->{gene} . " "
+      . $gene->{transcript} . " "
+      . $gene->{chr} . ":" . $gene->{start} . "-" . $gene->{end}
+      . "\n";
 
     if (-s $depth_file) {
         print "[INFO] [$gene_index/$gene_total] Reuse existing gene depth file: $depth_file\n";
         $reused_depth_file_count++;
     } else {
-        print "[INFO] [$gene_index/$gene_total] Gene depth file not found or empty, generate now: $depth_file\n";
-
+        print "[INFO] [$gene_index/$gene_total] Generate gene depth file: $depth_file\n";
         run_samtools_depth_for_gene(
             samtools    => $samtools,
             bam         => $bam,
@@ -286,7 +301,6 @@ foreach my $gene (@genes) {
             min_mapq    => $min_mapq,
             exclude_dup => $exclude_dup,
         );
-
         $generated_depth_file_count++;
     }
 
@@ -298,18 +312,18 @@ foreach my $gene (@genes) {
         windows_ref => $gene_windows{$gkey},
     );
 
-    $gene_mean_depth{$gkey}   = $gene_mean;
+    $gene_mean_depth{$gkey} = $gene_mean;
     $gene_total_length{$gkey} = $gene_len;
 
-    foreach my $wkey (keys %$win_depth_ref) {
+    for my $wkey (keys %{$win_depth_ref}) {
         $window_mean_depth{$wkey} = $win_depth_ref->{$wkey};
     }
 
     print "[INFO] [$gene_index/$gene_total] Finished gene: "
-        . $gene->{gene}
-        . ", Gene_Mean_Depth="
-        . sprintf("%.4f", $gene_mean)
-        . "\n";
+      . $gene->{gene}
+      . ", Gene_Mean_Depth="
+      . sprintf("%.4f", $gene_mean)
+      . "\n";
 
     unlink $depth_file if !$keep_depth_file;
 }
@@ -318,23 +332,31 @@ if (!$keep_depth_file) {
     rmdir $depth_dir if -d $depth_dir;
 }
 
-# ============================================================
-# Step 4. Write gene mean depth output
-# ============================================================
-
+# ------------------------------------------------------------
+# Write gene mean depth output
+# ------------------------------------------------------------
 open my $GD, ">", $gene_depth_out
     or die "[ERROR] Cannot write gene mean depth output: $gene_depth_out\n";
 
 print $GD join("\t", qw(
-    SampleID Gene Classification Transcript Chrom Start End Strand ExonCount
-    Gene_Key Gene_Length Gene_Mean_Depth Window_Count
+    SampleID
+    Gene
+    Classification
+    Transcript
+    Chrom
+    Start
+    End
+    Strand
+    ExonCount
+    Gene_Key
+    Gene_Length
+    Gene_Mean_Depth
+    Window_Count
 )), "\n";
 
-foreach my $gene (@genes) {
+for my $gene (@genes) {
     my $gkey = gene_key($gene);
-    my $window_count = exists $gene_windows{$gkey}
-        ? scalar(@{ $gene_windows{$gkey} })
-        : 0;
+    my $window_count = exists $gene_windows{$gkey} ? scalar(@{ $gene_windows{$gkey} }) : 0;
 
     print $GD join("\t",
         $sample,
@@ -355,19 +377,28 @@ foreach my $gene (@genes) {
 
 close $GD;
 
-# ============================================================
-# Step 5. Write window depth output
-# ============================================================
-
+# ------------------------------------------------------------
+# Write window depth output
+# ------------------------------------------------------------
 open my $WD, ">", $window_depth_out
     or die "[ERROR] Cannot write window depth output: $window_depth_out\n";
 
 print $WD join("\t", qw(
-    SampleID Gene Classification Transcript Window_ID Chrom Start End Length
-    Gene_Start Gene_End Window_Mean_Depth
+    SampleID
+    Gene
+    Classification
+    Transcript
+    Window_ID
+    Chrom
+    Start
+    End
+    Length
+    Gene_Start
+    Gene_End
+    Window_Mean_Depth
 )), "\n";
 
-foreach my $win (@windows) {
+for my $win (@windows) {
     my $wkey = window_key($win);
 
     print $WD join("\t",
@@ -388,10 +419,9 @@ foreach my $win (@windows) {
 
 close $WD;
 
-# ============================================================
-# Step 6. Calculate ratio and classify windows
-# ============================================================
-
+# ------------------------------------------------------------
+# Calculate depth ratios and classify windows
+# ------------------------------------------------------------
 my @ratio_records;
 my $del_window_count = 0;
 
@@ -402,19 +432,33 @@ open my $DELWIN, ">", $del_window_out
     or die "[ERROR] Cannot write deletion window output: $del_window_out\n";
 
 my @ratio_header = qw(
-    SampleID Gene Classification Transcript Window_ID Chrom Start End Length
-    Gene_Start Gene_End Gene_Mean_Depth Window_Mean_Depth
-    Depth_Ratio Is_Del_Window Window_Status Comment
+    SampleID
+    Gene
+    Classification
+    Transcript
+    Window_ID
+    Chrom
+    Start
+    End
+    Length
+    Gene_Start
+    Gene_End
+    Gene_Mean_Depth
+    Window_Mean_Depth
+    Depth_Ratio
+    Is_Del_Window
+    Window_Status
+    Comment
 );
 
-print $RATIO  join("\t", @ratio_header), "\n";
+print $RATIO join("\t", @ratio_header), "\n";
 print $DELWIN join("\t", @ratio_header), "\n";
 
-foreach my $win (@windows) {
+for my $win (@windows) {
     my $wkey = window_key($win);
     my $gkey = $win->{gene_key};
 
-    my $gene_mean   = $gene_mean_depth{$gkey};
+    my $gene_mean = $gene_mean_depth{$gkey};
     my $window_mean = $window_mean_depth{$wkey} // 0;
 
     my $ratio = "NA";
@@ -422,14 +466,14 @@ foreach my $win (@windows) {
         if defined $gene_mean && $gene_mean > 0;
 
     my ($status, $comment, $is_del_window) = classify_window_depth(
-        gene_mean_depth     => $gene_mean,
-        ratio               => $ratio,
+        gene_mean_depth    => $gene_mean,
+        ratio              => $ratio,
         min_gene_mean_depth => $min_gene_mean_depth,
-        del_ratio_cutoff    => $del_depth_ratio_cutoff,
+        del_ratio_cutoff   => $del_depth_ratio_cutoff,
     );
 
     my $record = {
-        %$win,
+        %{$win},
         gene_mean_depth   => $gene_mean,
         window_mean_depth => $window_mean,
         depth_ratio       => $ratio,
@@ -452,7 +496,7 @@ foreach my $win (@windows) {
         $win->{length},
         $win->{gene_start},
         $win->{gene_end},
-        sprintf("%.4f", $gene_mean),
+        defined $gene_mean ? sprintf("%.4f", $gene_mean) : "NA",
         sprintf("%.4f", $window_mean),
         ($ratio eq "NA" ? "NA" : sprintf("%.4f", $ratio)),
         $is_del_window ? "Yes" : "No",
@@ -471,30 +515,41 @@ foreach my $win (@windows) {
 close $RATIO;
 close $DELWIN;
 
-# ============================================================
-# Step 7. Merge consecutive del windows into candidates
-# ============================================================
-
+# ------------------------------------------------------------
+# Merge consecutive deletion-supporting windows into candidates
+# ------------------------------------------------------------
 my @candidates = merge_consecutive_del_windows(
-    records                     => \@ratio_records,
-    min_consecutive_del_windows => $min_consecutive_del_windows,
+    records                         => \@ratio_records,
+    min_consecutive_del_windows      => $min_consecutive_del_windows,
 );
 
-# ============================================================
-# Step 8. Write candidate output
-# ============================================================
-
+# ------------------------------------------------------------
+# Write candidate output
+# ------------------------------------------------------------
 open my $CAND, ">", $out
     or die "[ERROR] Cannot write candidate output: $out\n";
 
 print $CAND join("\t", qw(
-    SampleID Gene Classification Transcript Chrom Start End Candidate_Length
-    Window_Count Gene_Mean_Depth Candidate_Mean_Depth
-    Mean_Depth_Ratio Min_Depth_Ratio Max_Depth_Ratio
-    Candidate_Status Del_Window_IDs Comment
+    SampleID
+    Gene
+    Classification
+    Transcript
+    Chrom
+    Start
+    End
+    Candidate_Length
+    Window_Count
+    Gene_Mean_Depth
+    Candidate_Mean_Depth
+    Mean_Depth_Ratio
+    Min_Depth_Ratio
+    Max_Depth_Ratio
+    Candidate_Status
+    Del_Window_IDs
+    Comment
 )), "\n";
 
-foreach my $cand (@candidates) {
+for my $cand (@candidates) {
     print $CAND join("\t",
         $sample,
         $cand->{gene},
@@ -519,28 +574,29 @@ foreach my $cand (@candidates) {
 close $CAND;
 
 print "[INFO] Window-based depth analysis finished\n";
-print "[INFO] Sample                         : $sample\n";
-print "[INFO] Gene mean depth output         : $gene_depth_out\n";
-print "[INFO] Window depth output            : $window_depth_out\n";
-print "[INFO] All window ratio output        : $all_ratio_out\n";
-print "[INFO] Del window output              : $del_window_out\n";
-print "[INFO] Candidate output               : $out\n";
-print "[INFO] Gene depth files reused        : $reused_depth_file_count\n";
-print "[INFO] Gene depth files generated     : $generated_depth_file_count\n";
-print "[INFO] Del window number              : $del_window_count\n";
-print "[INFO] Candidate number               : " . scalar(@candidates) . "\n";
+print "[INFO] Sample : $sample\n";
+print "[INFO] Gene mean depth output : $gene_depth_out\n";
+print "[INFO] Window depth output : $window_depth_out\n";
+print "[INFO] All window ratio output : $all_ratio_out\n";
+print "[INFO] Del window output : $del_window_out\n";
+print "[INFO] Candidate output : $out\n";
+print "[INFO] Gene depth files reused : $reused_depth_file_count\n";
+print "[INFO] Gene depth files generated : $generated_depth_file_count\n";
+print "[INFO] Del window number : $del_window_count\n";
+print "[INFO] Candidate number : " . scalar(@candidates) . "\n";
 
 exit 0;
 
 # ============================================================
-# Subroutines
+# Config helpers
 # ============================================================
-
 sub read_config {
     my ($file) = @_;
+
     my %conf;
 
-    open my $FH, "<", $file or die "[ERROR] Cannot open config file: $file\n";
+    open my $FH, "<", $file
+        or die "[ERROR] Cannot open config file: $file\n";
 
     while (my $line = <$FH>) {
         chomp $line;
@@ -549,68 +605,172 @@ sub read_config {
         next if $line =~ /^\s*$/;
         next if $line =~ /^\s*#/;
 
-        if ($line =~ /^\s*([^=\s]+)\s*=\s*(.*?)\s*$/) {
-            my $key = $1;
-            my $val = $2;
+        $line =~ s/\s+#.*$//;
 
-            $val =~ s/\s+#.*$//;
-            $val =~ s/^\s+|\s+$//g;
-            $val =~ s/^['"]//;
-            $val =~ s/['"]$//;
+        next unless $line =~ /^\s*([^=\s]+)\s*=\s*(.*?)\s*$/;
 
-            $conf{$key} = $val;
-        }
+        my ($key, $val) = ($1, $2);
+
+        $key =~ s/^\s+|\s+$//g;
+        $val =~ s/^\s+|\s+$//g;
+        $val =~ s/^["']//;
+        $val =~ s/["']$//;
+
+        die "[ERROR] Empty config key found in $file\n"
+            if $key eq "";
+
+        $conf{$key} = $val;
     }
 
     close $FH;
+
     return %conf;
 }
 
-sub get_conf {
-    my ($conf_ref, $key, $default) = @_;
+sub get_conf_required {
+    my ($conf_ref, $key) = @_;
 
-    if (exists $conf_ref->{$key} && defined $conf_ref->{$key} && $conf_ref->{$key} ne "") {
-        return $conf_ref->{$key};
-    }
+    die "[ERROR] Required config parameter missing: $key\n"
+        unless exists $conf_ref->{$key}
+            && defined $conf_ref->{$key}
+            && $conf_ref->{$key} ne "";
 
-    return $default;
+    return $conf_ref->{$key};
 }
 
-sub resolve_path_by_config {
-    my ($path, $config_file) = @_;
+sub detect_project_root {
+    my ($config_path) = @_;
 
-    die "[ERROR] Empty path provided\n"
+    my $config_dir = dirname($config_path);
+
+    if ($config_dir =~ m{/conf$}) {
+        return abs_path(dirname($config_dir));
+    }
+
+    return abs_path($config_dir);
+}
+
+sub resolve_config_path {
+    my ($path, $project_root) = @_;
+
+    die "[ERROR] Empty config path provided\n"
         unless defined $path && $path ne "";
 
-    if ($path =~ /^\//) {
+    if ($path =~ m{^/}) {
         my $abs = abs_path($path);
-        die "[ERROR] Path not found: $path\n" unless defined $abs;
+        die "[ERROR] Path not found: $path\n"
+            unless defined $abs;
         return $abs;
     }
 
-    my $conf_dir = dirname($config_file);
+    my $full = "$project_root/$path";
+    my $abs = abs_path($full);
 
-    my $try1 = "$conf_dir/$path";
-    my $abs1 = abs_path($try1);
-    return $abs1 if defined $abs1;
+    die "[ERROR] Path not found: $full\n"
+        unless defined $abs;
 
-    my $project_dir = abs_path("$conf_dir/..");
-    my $try2 = "$project_dir/$path";
-    my $abs2 = abs_path($try2);
-    return $abs2 if defined $abs2;
-
-    die "[ERROR] Path not found: $path\n"
-      . "        Tried: $try1\n"
-      . "        Tried: $try2\n";
+    return $abs;
 }
 
+# ============================================================
+# Validation helpers
+# ============================================================
+sub validate_bool_01 {
+    my ($name, $v) = @_;
+
+    die "[ERROR] $name must be 0 or 1. Observed: $v\n"
+        unless defined $v && $v =~ /^[01]$/;
+
+    return 1;
+}
+
+sub validate_positive_integer {
+    my ($name, $v) = @_;
+
+    die "[ERROR] $name must be a positive integer. Observed: $v\n"
+        unless defined $v && $v =~ /^\d+$/ && $v >= 1;
+
+    return 1;
+}
+
+sub validate_nonnegative_integer {
+    my ($name, $v) = @_;
+
+    die "[ERROR] $name must be a non-negative integer. Observed: $v\n"
+        unless defined $v && $v =~ /^\d+$/ && $v >= 0;
+
+    return 1;
+}
+
+sub validate_nonnegative_number {
+    my ($name, $v) = @_;
+
+    die "[ERROR] $name must be numeric. Observed: $v\n"
+        unless defined $v && $v =~ /^(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+
+    die "[ERROR] $name must be >= 0. Observed: $v\n"
+        unless $v >= 0;
+
+    return 1;
+}
+
+sub validate_fraction_0_1 {
+    my ($name, $v) = @_;
+
+    die "[ERROR] $name must be numeric. Observed: $v\n"
+        unless defined $v && $v =~ /^(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+
+    die "[ERROR] $name must be > 0 and <= 1. Observed: $v\n"
+        unless $v > 0 && $v <= 1;
+
+    return 1;
+}
+
+sub check_executable {
+    my ($cmd, $name) = @_;
+
+    die "[ERROR] Empty executable path for $name\n"
+        unless defined $cmd && $cmd ne "";
+
+    if ($cmd =~ m{/}) {
+        die "[ERROR] $name executable not found or not executable: $cmd\n"
+            unless -x $cmd;
+    } else {
+        my $ret = system("command -v $cmd >/dev/null 2>&1");
+        die "[ERROR] $name executable not found in PATH: $cmd\n"
+            if $ret != 0;
+    }
+
+    return 1;
+}
+
+sub check_bam_index {
+    my ($bam_file) = @_;
+
+    my $bai1 = "$bam_file.bai";
+    my $bai2 = $bam_file;
+    $bai2 =~ s/\.bam$/.bai/i;
+
+    die "[ERROR] BAM index not found for: $bam_file\n"
+      . "        Expected one of:\n"
+      . "        $bai1\n"
+      . "        $bai2\n"
+        unless -s $bai1 || -s $bai2;
+
+    return 1;
+}
+
+# ============================================================
+# Input parsers
+# ============================================================
 sub read_core_gene_list {
     my ($file) = @_;
 
     my %gene;
     my %classification;
 
-    open my $FH, "<", $file or die "[ERROR] Cannot open HCM core gene list: $file\n";
+    open my $FH, "<", $file
+        or die "[ERROR] Cannot open HCM_CORE_GENE_LIST: $file\n";
 
     my $line_no = 0;
 
@@ -623,16 +783,22 @@ sub read_core_gene_list {
         next if $line eq "";
         next if $line =~ /^#/;
 
-        my @F = split /\t|\s+/, $line;
+        my @f = split /\t|\s+/, $line;
 
-        my $g = $F[0] // "";
-        my $c = $F[1] // "NA";
-
-        next if $line_no == 1 && $g =~ /^Gene$/i;
-        next unless $g ne "";
+        my $g = $f[0] // "";
+        my $c = $f[1] // "NA";
 
         $g =~ s/^\s+|\s+$//g;
         $c =~ s/^\s+|\s+$//g;
+
+        next if $line_no == 1 && $g =~ /^Gene$/i;
+
+        die "[ERROR] Empty gene symbol in HCM_CORE_GENE_LIST at line $line_no\n"
+            if $g eq "";
+
+        die "[ERROR] Invalid gene symbol in HCM_CORE_GENE_LIST at line $line_no: $g\n"
+            unless $g =~ /^[A-Za-z0-9_.-]+$/;
+
         $c = "NA" if $c eq "";
 
         $gene{$g} = 1;
@@ -646,7 +812,7 @@ sub read_core_gene_list {
 
     close $FH;
 
-    die "[ERROR] No genes loaded from HCM core gene list: $file\n"
+    die "[ERROR] No genes loaded from HCM_CORE_GENE_LIST: $file\n"
         unless keys %gene;
 
     return (\%gene, \%classification);
@@ -673,20 +839,21 @@ sub choose_higher_classification {
     return $new_rank > $old_rank ? $new : $old;
 }
 
-sub read_gene_txt {
+sub read_core_gene_regions {
     my %args = @_;
 
-    my $file               = $args{file};
-    my $analyze_core_only  = $args{analyze_core_only} || 0;
-    my $core_gene_ref      = $args{core_gene_ref} || {};
-    my $classification_ref = $args{classification_ref} || {};
+    my $file = $args{gene_txt};
+    my $core_gene_ref = $args{core_gene_ref};
+    my $classification_ref = $args{classification_ref};
 
     my @genes;
     my %col;
 
-    open my $FH, "<", $file or die "[ERROR] Cannot open gene TXT: $file\n";
+    open my $FH, "<", $file
+        or die "[ERROR] Cannot open REFSEQ_MANE_SELECT_GENE_TXT: $file\n";
 
     my $line_no = 0;
+    my $header_seen = 0;
 
     while (my $line = <$FH>) {
         chomp $line;
@@ -696,42 +863,47 @@ sub read_gene_txt {
         next if $line =~ /^\s*$/;
         next if $line =~ /^\s*#/;
 
-        my @F = split /\t/, $line;
+        my @f = split /\t/, $line, -1;
 
-        if ($line_no == 1) {
-            for my $i (0 .. $#F) {
-                $col{$F[$i]} = $i;
+        if (!$header_seen) {
+            for my $i (0 .. $#f) {
+                my $name = $f[$i];
+                $name =~ s/^\s+|\s+$//g;
+                $col{$name} = $i;
             }
 
-            foreach my $required (qw(Gene Transcript Chrom Start End Strand ExonCount)) {
-                die "[ERROR] Gene TXT missing required column '$required': $file\n"
+            for my $required (qw/Gene Transcript Chrom Start End Strand ExonCount/) {
+                die "[ERROR] Required column '$required' not found in REFSEQ_MANE_SELECT_GENE_TXT: $file\n"
                     unless exists $col{$required};
             }
 
+            $header_seen = 1;
             next;
         }
 
-        my $gene       = $F[$col{Gene}];
-        my $transcript = $F[$col{Transcript}];
-        my $chr        = $F[$col{Chrom}];
-        my $start      = $F[$col{Start}];
-        my $end        = $F[$col{End}];
-        my $strand     = $F[$col{Strand}];
-        my $exon_count = $F[$col{ExonCount}];
+        my $gene       = $f[$col{Gene}];
+        my $transcript = $f[$col{Transcript}];
+        my $chr        = $f[$col{Chrom}];
+        my $start      = $f[$col{Start}];
+        my $end        = $f[$col{End}];
+        my $strand     = $f[$col{Strand}];
+        my $exon_count = $f[$col{ExonCount}];
 
-        next unless defined $gene && defined $chr && defined $start && defined $end;
-
-        $gene       =~ s/^\s+|\s+$//g;
-        $transcript =~ s/^\s+|\s+$//g if defined $transcript;
-        $chr        =~ s/^\s+|\s+$//g;
-        $strand     =~ s/^\s+|\s+$//g if defined $strand;
-
-        if ($analyze_core_only) {
-            next unless exists $core_gene_ref->{$gene};
+        for ($gene, $transcript, $chr, $start, $end, $strand, $exon_count) {
+            $_ = "" unless defined $_;
+            s/^\s+|\s+$//g;
         }
 
-        next unless $start =~ /^\d+$/ && $end =~ /^\d+$/;
-        next if $end < $start;
+        next unless exists $core_gene_ref->{$gene};
+
+        die "[ERROR] Invalid Start at REFSEQ_MANE_SELECT_GENE_TXT line $line_no: $start\n"
+            unless $start =~ /^\d+$/ && $start >= 1;
+
+        die "[ERROR] Invalid End at REFSEQ_MANE_SELECT_GENE_TXT line $line_no: $end\n"
+            unless $end =~ /^\d+$/ && $end >= 1;
+
+        die "[ERROR] Start > End at REFSEQ_MANE_SELECT_GENE_TXT line $line_no: $chr:$start-$end\n"
+            if $start > $end;
 
         my $classification = exists $classification_ref->{$gene}
             ? $classification_ref->{$gene}
@@ -751,16 +923,30 @@ sub read_gene_txt {
     }
 
     close $FH;
+
+    die "[ERROR] REFSEQ_MANE_SELECT_GENE_TXT header was not found: $file\n"
+        unless $header_seen;
+
+    @genes = sort {
+        chrom_order_key($a->{chr}) cmp chrom_order_key($b->{chr})
+            || $a->{start} <=> $b->{start}
+            || $a->{end} <=> $b->{end}
+            || $a->{gene} cmp $b->{gene}
+    } @genes;
+
     return @genes;
 }
 
+# ============================================================
+# Window and depth calculation
+# ============================================================
 sub generate_windows {
     my %args = @_;
 
-    my $gene            = $args{gene};
-    my $sample          = $args{sample};
-    my $window_size     = $args{window_size};
-    my $window_step     = $args{window_step};
+    my $gene = $args{gene};
+    my $sample = $args{sample};
+    my $window_size = $args{window_size};
+    my $window_step = $args{window_step};
     my $min_window_size = $args{min_window_size};
 
     my @windows;
@@ -782,18 +968,14 @@ sub generate_windows {
             classification => $gene->{classification},
             transcript     => $gene->{transcript},
             chr            => $gene->{chr},
-
             start          => $start,
             end            => $end,
             length         => $length,
-
             gene_start     => $gene->{start},
             gene_end       => $gene->{end},
             gene_length    => $gene->{length},
-
             strand         => $gene->{strand},
             exon_count     => $gene->{exon_count},
-
             gene_key       => $gkey,
             window_id      => $gene->{gene} . "_W" . $window_index,
         };
@@ -805,57 +987,70 @@ sub generate_windows {
 sub run_samtools_depth_for_gene {
     my %args = @_;
 
-    my $samtools    = $args{samtools};
-    my $bam         = $args{bam};
-    my $gene        = $args{gene};
-    my $depth_file  = $args{depth_file};
-    my $min_mapq    = $args{min_mapq};
+    my $samtools = $args{samtools};
+    my $bam = $args{bam};
+    my $gene = $args{gene};
+    my $depth_file = $args{depth_file};
+    my $min_mapq = $args{min_mapq};
     my $exclude_dup = $args{exclude_dup};
 
     my $region = join_region($gene->{chr}, $gene->{start}, $gene->{end});
 
+    # Explicitly discard low-confidence alignment categories.
+    # 0x4   read unmapped
+    # 0x100 secondary alignment
+    # 0x200 QC fail
+    # 0x800 supplementary alignment
+    # 0x400 duplicate, only when EXCLUDE_DUPLICATES=1
+    my $exclude_flags = 4 + 256 + 512 + 2048;
+    $exclude_flags += 1024 if $exclude_dup == 1;
+
     my @cmd = (
-        shell_quote($samtools),
-        "depth",
+        $samtools, "depth",
         "-a",
-        "-q", shell_quote($min_mapq),
-        "-r", shell_quote($region),
+        "-Q", $min_mapq,
+        "-G", $exclude_flags,
+        "-r", $region,
+        $bam,
     );
 
-    if ($exclude_dup) {
-        push @cmd, ("-G", "1024");
+    print "[INFO] Generate gene depth file: $depth_file\n";
+    print "[CMD] ", join(" ", map { shell_quote($_) } @cmd), " > ", shell_quote($depth_file), "\n";
+
+    open my $IN, "-|", @cmd
+        or die "[ERROR] Failed to run samtools depth for region $region\n";
+
+    open my $OUT, ">", $depth_file
+        or die "[ERROR] Cannot write depth file: $depth_file\n";
+
+    while (my $line = <$IN>) {
+        print $OUT $line;
     }
 
-    push @cmd, shell_quote($bam);
+    close $IN
+        or die "[ERROR] samtools depth failed for region $region\n";
 
-    my $cmd = join(" ", @cmd) . " > " . shell_quote($depth_file);
+    close $OUT;
 
-    print "[INFO] Generate gene depth file: $depth_file\n";
-    print "[INFO] Command: $cmd\n";
-
-    system($cmd) == 0
-        or die "[ERROR] Failed to run command:\n$cmd\n";
+    die "[ERROR] Depth file was not generated: $depth_file\n"
+        unless -e $depth_file;
 }
 
 sub calculate_depth_from_gene_depth_file {
     my %args = @_;
 
-    my $depth_file  = $args{depth_file};
-    my $gene        = $args{gene};
+    my $depth_file = $args{depth_file};
+    my $gene = $args{gene};
     my $windows_ref = $args{windows_ref};
+    my @windows = @{$windows_ref};
 
-    my @windows = @$windows_ref;
-
-    my $gene_start  = $gene->{start};
-    my $gene_end    = $gene->{end};
+    my $gene_start = $gene->{start};
+    my $gene_end = $gene->{end};
     my $gene_length = $gene_end - $gene_start + 1;
 
-    die "[ERROR] Invalid gene length for "
-        . $gene->{gene} . ": $gene_start-$gene_end\n"
+    die "[ERROR] Invalid gene length for " . $gene->{gene} . ": $gene_start-$gene_end\n"
         if $gene_length <= 0;
 
-    # depth_by_offset[1] corresponds to gene_start.
-    # depth_by_offset[2] corresponds to gene_start + 1.
     my @depth_by_offset;
 
     open my $IN, "<", $depth_file
@@ -865,14 +1060,13 @@ sub calculate_depth_from_gene_depth_file {
         chomp $line;
         next if $line =~ /^\s*$/;
 
-        my @F = split /\t/, $line;
-        next unless @F >= 3;
+        my @f = split /\t/, $line;
+        next unless @f >= 3;
 
-        my ($chr, $pos, $depth) = @F[0, 1, 2];
+        my ($chr, $pos, $depth) = @f[0, 1, 2];
 
         next unless defined $pos && $pos =~ /^\d+$/;
         next unless defined $depth && $depth =~ /^\d+$/;
-
         next if $pos < $gene_start;
         next if $pos > $gene_end;
 
@@ -890,20 +1084,18 @@ sub calculate_depth_from_gene_depth_file {
         $prefix_sum[$i] = $prefix_sum[$i - 1] + $d;
     }
 
-    my $gene_mean_depth = 0;
-    $gene_mean_depth = $prefix_sum[$gene_length] / $gene_length
-        if $gene_length > 0;
+    my $gene_mean_depth = $prefix_sum[$gene_length] / $gene_length;
 
     my %window_mean_depth;
 
-    foreach my $win (@windows) {
+    for my $win (@windows) {
         my $wkey = window_key($win);
 
         my $w_start = $win->{start};
-        my $w_end   = $win->{end};
+        my $w_end = $win->{end};
 
         $w_start = $gene_start if $w_start < $gene_start;
-        $w_end   = $gene_end   if $w_end > $gene_end;
+        $w_end = $gene_end if $w_end > $gene_end;
 
         my $w_len = $w_end - $w_start + 1;
 
@@ -912,12 +1104,10 @@ sub calculate_depth_from_gene_depth_file {
             next;
         }
 
-        my $left_offset  = $w_start - $gene_start + 1;
-        my $right_offset = $w_end   - $gene_start + 1;
+        my $left_offset = $w_start - $gene_start + 1;
+        my $right_offset = $w_end - $gene_start + 1;
 
-        my $window_depth_sum =
-            $prefix_sum[$right_offset] - $prefix_sum[$left_offset - 1];
-
+        my $window_depth_sum = $prefix_sum[$right_offset] - $prefix_sum[$left_offset - 1];
         my $mean = $window_depth_sum / $w_len;
 
         $window_mean_depth{$wkey} = $mean;
@@ -929,10 +1119,10 @@ sub calculate_depth_from_gene_depth_file {
 sub classify_window_depth {
     my %args = @_;
 
-    my $gene_mean_depth     = $args{gene_mean_depth};
-    my $ratio               = $args{ratio};
+    my $gene_mean_depth = $args{gene_mean_depth};
+    my $ratio = $args{ratio};
     my $min_gene_mean_depth = $args{min_gene_mean_depth};
-    my $cutoff              = $args{del_ratio_cutoff};
+    my $cutoff = $args{del_ratio_cutoff};
 
     if (!defined $gene_mean_depth || $gene_mean_depth < $min_gene_mean_depth) {
         return (
@@ -965,6 +1155,9 @@ sub classify_window_depth {
     );
 }
 
+# ============================================================
+# Candidate merging
+# ============================================================
 sub merge_consecutive_del_windows {
     my %args = @_;
 
@@ -973,7 +1166,7 @@ sub merge_consecutive_del_windows {
 
     my %grouped;
 
-    foreach my $r (@records) {
+    for my $r (@records) {
         my $key = join("|",
             $r->{gene},
             $r->{transcript},
@@ -981,38 +1174,35 @@ sub merge_consecutive_del_windows {
             $r->{gene_start},
             $r->{gene_end},
         );
-
         push @{ $grouped{$key} }, $r;
     }
 
     my @candidates;
 
-    foreach my $gkey (sort keys %grouped) {
+    for my $gkey (sort keys %grouped) {
         my @sorted = sort {
             $a->{start} <=> $b->{start}
-                ||
-            $a->{end} <=> $b->{end}
+                || $a->{end} <=> $b->{end}
         } @{ $grouped{$gkey} };
 
         my @current_del_run;
 
-        foreach my $r (@sorted) {
+        for my $r (@sorted) {
             if ($r->{is_del_window}) {
                 push @current_del_run, $r;
             } else {
                 add_del_run_candidate_if_valid(
-                    candidates_ref  => \@candidates,
-                    windows_ref     => \@current_del_run,
+                    candidates_ref => \@candidates,
+                    windows_ref    => \@current_del_run,
                     min_consecutive => $min_consecutive,
                 );
-
                 @current_del_run = ();
             }
         }
 
         add_del_run_candidate_if_valid(
-            candidates_ref  => \@candidates,
-            windows_ref     => \@current_del_run,
+            candidates_ref => \@candidates,
+            windows_ref    => \@current_del_run,
             min_consecutive => $min_consecutive,
         );
     }
@@ -1023,15 +1213,15 @@ sub merge_consecutive_del_windows {
 sub add_del_run_candidate_if_valid {
     my %args = @_;
 
-    my $candidates_ref  = $args{candidates_ref};
-    my $windows_ref     = $args{windows_ref};
+    my $candidates_ref = $args{candidates_ref};
+    my $windows_ref = $args{windows_ref};
     my $min_consecutive = $args{min_consecutive};
 
-    return unless @$windows_ref;
-    return if scalar(@$windows_ref) < $min_consecutive;
+    return unless @{$windows_ref};
+    return if scalar(@{$windows_ref}) < $min_consecutive;
 
     my $candidate = build_candidate($windows_ref);
-    push @$candidates_ref, $candidate;
+    push @{$candidates_ref}, $candidate;
 }
 
 sub build_candidate {
@@ -1039,48 +1229,51 @@ sub build_candidate {
 
     my @wins = sort {
         $a->{start} <=> $b->{start}
-            ||
-        $a->{end} <=> $b->{end}
-    } @$wins_ref;
+            || $a->{end} <=> $b->{end}
+    } @{$wins_ref};
 
     my $first = $wins[0];
-    my $last  = $wins[-1];
+    my $last = $wins[-1];
 
     my $start = $first->{start};
-    my $end   = $last->{end};
+    my $end = $last->{end};
 
     my $total_depth_sum = 0;
     my $total_length = 0;
-
     my $ratio_sum = 0;
     my $ratio_count = 0;
-    my $min_ratio = 999999;
-    my $max_ratio = -1;
-
+    my $min_ratio;
+    my $max_ratio;
     my @window_ids;
 
-    foreach my $w (@wins) {
+    for my $w (@wins) {
         push @window_ids, $w->{window_id};
 
         $total_depth_sum += $w->{window_mean_depth} * $w->{length};
-        $total_length    += $w->{length};
+        $total_length += $w->{length};
 
         if (defined $w->{depth_ratio} && $w->{depth_ratio} ne "NA") {
             $ratio_sum += $w->{depth_ratio};
             $ratio_count++;
 
-            $min_ratio = $w->{depth_ratio} if $w->{depth_ratio} < $min_ratio;
-            $max_ratio = $w->{depth_ratio} if $w->{depth_ratio} > $max_ratio;
+            $min_ratio = $w->{depth_ratio}
+                if !defined $min_ratio || $w->{depth_ratio} < $min_ratio;
+
+            $max_ratio = $w->{depth_ratio}
+                if !defined $max_ratio || $w->{depth_ratio} > $max_ratio;
         }
     }
 
     my $candidate_mean_depth = 0;
-    $candidate_mean_depth = $total_depth_sum / $total_length if $total_length > 0;
+    $candidate_mean_depth = $total_depth_sum / $total_length
+        if $total_length > 0;
 
     my $mean_depth_ratio = 0;
-    $mean_depth_ratio = $ratio_sum / $ratio_count if $ratio_count > 0;
+    $mean_depth_ratio = $ratio_sum / $ratio_count
+        if $ratio_count > 0;
 
-    my $comment = "Merged consecutive deletion-supporting windows";
+    $min_ratio = 0 unless defined $min_ratio;
+    $max_ratio = 0 unless defined $max_ratio;
 
     return {
         gene                 => $first->{gene},
@@ -1094,19 +1287,22 @@ sub build_candidate {
         gene_mean_depth      => $first->{gene_mean_depth},
         candidate_mean_depth => $candidate_mean_depth,
         mean_depth_ratio     => $mean_depth_ratio,
-        min_depth_ratio      => $min_ratio == 999999 ? 0 : $min_ratio,
-        max_depth_ratio      => $max_ratio == -1 ? 0 : $max_ratio,
+        min_depth_ratio      => $min_ratio,
+        max_depth_ratio      => $max_ratio,
         del_window_ids       => join(",", @window_ids),
-        comment              => $comment,
+        comment              => "Merged consecutive deletion-supporting windows",
     };
 }
 
+# ============================================================
+# Utility helpers
+# ============================================================
 sub make_gene_depth_filename {
     my %args = @_;
 
     my $depth_dir = $args{depth_dir};
-    my $sample    = $args{sample};
-    my $gene      = $args{gene};
+    my $sample = $args{sample};
+    my $gene = $args{gene};
 
     my $name = join("_",
         $sample,
@@ -1126,7 +1322,7 @@ sub gene_key {
     my ($r) = @_;
 
     my $start = exists $r->{gene_start} ? $r->{gene_start} : $r->{start};
-    my $end   = exists $r->{gene_end}   ? $r->{gene_end}   : $r->{end};
+    my $end = exists $r->{gene_end} ? $r->{gene_end} : $r->{end};
 
     return join("|",
         $r->{gene},
@@ -1155,123 +1351,86 @@ sub join_region {
     return $chr . ":" . $start . "-" . $end;
 }
 
+sub chrom_order_key {
+    my ($chr) = @_;
+
+    my $x = $chr;
+    $x =~ s/^chr//i;
+
+    return sprintf("%03d", $x) if $x =~ /^\d+$/;
+
+    my $u = uc($x);
+
+    return "023" if $u eq "X";
+    return "024" if $u eq "Y";
+    return "025" if $u eq "M" || $u eq "MT";
+
+    return "999_$chr";
+}
+
 sub shell_quote {
     my ($str) = @_;
 
-    die "[ERROR] Undefined shell argument\n" unless defined $str;
+    die "[ERROR] Undefined shell argument\n"
+        unless defined $str;
 
-    $str =~ s/^\s+|\s+$//g;
+    return "''" if $str eq "";
 
-    die "[ERROR] Empty shell argument\n" if $str eq "";
+    return $str
+        if $str =~ /^[A-Za-z0-9_\.\-\/\:=,\+]+$/;
 
-    # Do not wrap arguments with single quotes.
-    # Escape common shell metacharacters only when needed.
-    $str =~ s/([ \t\n\r\\\"\`\$\&\|\;\<\>\(\)\{\}\[\]\*\?\!\#])/\\$1/g;
+    $str =~ s/'/'\\''/g;
 
-    return $str;
-}
-
-sub check_positive_integer {
-    my ($name, $value) = @_;
-
-    die "[ERROR] $name must be a positive integer\n"
-        unless defined $value && $value =~ /^\d+$/ && $value > 0;
-}
-
-sub check_non_negative_integer {
-    my ($name, $value) = @_;
-
-    die "[ERROR] $name must be a non-negative integer\n"
-        unless defined $value && $value =~ /^\d+$/;
-}
-
-sub check_non_negative_number {
-    my ($name, $value) = @_;
-
-    die "[ERROR] $name must be a non-negative number\n"
-        unless defined $value && $value =~ /^\d+(?:\.\d+)?$/ && $value >= 0;
-}
-
-sub check_numeric_range {
-    my ($name, $value, $min, $max) = @_;
-
-    die "[ERROR] $name must be numeric\n"
-        unless defined $value && $value =~ /^\d+(?:\.\d+)?$/;
-
-    die "[ERROR] $name must be >= $min and <= $max\n"
-        if $value < $min || $value > $max;
-}
-
-sub check_binary_flag {
-    my ($name, $value) = @_;
-
-    die "[ERROR] $name must be 0 or 1\n"
-        unless defined $value && $value =~ /^[01]$/;
+    return "'$str'";
 }
 
 sub usage {
-    return <<"USAGE";
-
+    return <<'USAGE';
 Usage:
-  perl bin/run_gene_mean_depth.pl \\
-      --config conf/hcm_exondel.example.conf \\
-      --bam sample.sorted.bam \\
-      --sample SAMPLE001 \\
-      --out results/SAMPLE001/01.depth/SAMPLE001.depth_candidates.tsv
+  perl bin/run_gene_mean_depth.pl \
+    --config /abs/path/conf/hcm_exondel.conf \
+    --bam /abs/path/SAMPLE.target.bam \
+    --sample SAMPLE_ID \
+    --out /abs/path/results/SAMPLE/01.depth/SAMPLE.depth_candidates.tsv
 
 Required arguments:
-  --config     Config file.
-  --bam        Coordinate-sorted BAM file.
-  --sample     Sample ID.
-  --out        Output depth candidate file.
+  --config    HCMExonDel config file.
+  --bam       Coordinate-sorted and indexed target BAM generated by extract_target_bam.pl.
+  --sample    Sample ID.
+  --out       Output depth candidate TSV file.
 
-Optional arguments:
-  --help       Show this help message.
-
-Required config:
+Required config parameters:
   SAMTOOLS
   REFSEQ_MANE_SELECT_GENE_TXT
+  HCM_CORE_GENE_LIST
+  WINDOW_SIZE
+  WINDOW_STEP
+  MIN_WINDOW_SIZE
+  MIN_GENE_MEAN_DEPTH
+  MIN_MAPQ
+  EXCLUDE_DUPLICATES
+  DEL_DEPTH_RATIO_CUTOFF
+  MIN_CONSECUTIVE_DEL_WINDOWS
+  KEEP_GENE_DEPTH_FILE
 
-Recommended config:
-  ANALYZE_CORE_GENES_ONLY=1
-  HCM_CORE_GENE_LIST=db/hcm_core_genes.txt
+Outputs:
+  Main output:
+    *.depth_candidates.tsv
 
-Window config:
-  WINDOW_SIZE=1000
-  WINDOW_STEP=500
-  MIN_WINDOW_SIZE=100
+  Additional outputs:
+    *.gene_mean_depth.tsv
+    *.window_depth.tsv
+    *.all_window_ratio.tsv
+    *.del_windows.tsv
 
-Depth QC config:
-  MIN_GENE_MEAN_DEPTH=20
-  MIN_MAPQ=20
-  EXCLUDE_DUPLICATES=1
+  Intermediate output:
+    *.gene_depth_files/*.depth.tsv
 
-Deletion calling config:
-  DEL_DEPTH_RATIO_CUTOFF=0.65
-  MIN_CONSECUTIVE_DEL_WINDOWS=3
-
-Intermediate file config:
-  KEEP_GENE_DEPTH_FILE=1
-
-Main output:
-  *.depth_candidates.tsv
-
-Additional output:
-  *.gene_mean_depth.tsv
-  *.window_depth.tsv
-  *.all_window_ratio.tsv
-  *.del_windows.tsv
-
-Intermediate output:
-  *.gene_depth_files/*.depth.tsv
-
-Note:
-  If *.gene_depth_files/*.depth.tsv already exists and is non-empty,
-  this script will reuse it automatically and skip samtools depth.
-
-  If MIN_MAPQ, EXCLUDE_DUPLICATES, BAM, or gene coordinates
-  are changed, please delete the old *.gene_depth_files directory first.
-
+Notes:
+  1. HCMExonDel only analyzes genes listed in HCM_CORE_GENE_LIST.
+  2. This script is intended to run on SAMPLE.target.bam, not the original WGS BAM.
+  3. If MIN_MAPQ, EXCLUDE_DUPLICATES, BAM, or gene coordinates are changed,
+     delete the old *.gene_depth_files directory before rerunning.
 USAGE
 }
 
