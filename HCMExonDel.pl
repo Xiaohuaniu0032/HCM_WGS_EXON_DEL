@@ -1,5 +1,6 @@
 #!/usr/bin/env perl
 # -*- coding: utf-8 -*-
+
 use strict;
 use warnings;
 use Getopt::Long qw(GetOptions);
@@ -24,11 +25,8 @@ use FindBin qw($Bin);
 # Output:
 #   OUTDIR/SAMPLE/SAMPLE.run.sh
 #
-# Updated workflow:
+# Workflow:
 #   Step 00. extract_target_bam
-#            Extract HCM core genes + TARGET_REGION_FLANK from the original WGS BAM
-#            and generate one sample-level target BAM.
-#
 #   Step 01. gene_mean_depth
 #   Step 02. cusum_depth_evidence
 #   Step 03. base_depth_ratio
@@ -43,21 +41,21 @@ use FindBin qw($Bin);
 #
 # Design notes:
 #   1. HCMExonDel only analyzes HCM core genes.
-#      ANALYZE_CORE_GENES_ONLY has been removed.
 #   2. The original WGS BAM is used only by extract_target_bam.pl.
 #   3. All downstream analyses use SAMPLE.target.bam.
-#   4. merge_evidence.pl does not read config directly.
+#   4. merge_evidence.pl is split-read-centered:
+#        split cluster is used as the candidate event backbone;
+#        depth and discordant signals are used as supporting evidence.
+#   5. merge_evidence.pl does not read config directly.
 #      HCMExonDel.pl reads EVIDENCE_OVERLAP_FRACTION from config
 #      and passes it to merge_evidence.pl as --min-overlap.
-#   5. All workflow switches and algorithm parameters should be
-#      explicitly configured in conf/hcm_exondel.example.conf.
 # ============================================================
 
 my $config;
 my $bam_list;
 my $outdir = "results";
-my $force = 0;
-my $help = 0;
+my $force  = 0;
+my $help   = 0;
 
 GetOptions(
     "config=s"   => \$config,
@@ -128,6 +126,20 @@ die "[ERROR] OUTPUT_BASE_DEPTH_RATIO_ALL=1 requires OUTPUT_BASE_DEPTH_RATIO=1.\n
     if $output_base_depth_ratio_all && !$output_base_depth_ratio;
 
 # ------------------------------------------------------------
+# Deprecated parameters
+# ------------------------------------------------------------
+if (exists $CONF{ANALYZE_CORE_GENES_ONLY}) {
+    die "[ERROR] ANALYZE_CORE_GENES_ONLY has been removed.\n"
+      . "        HCMExonDel now always analyzes HCM core genes from HCM_CORE_GENE_LIST.\n"
+      . "        Please delete ANALYZE_CORE_GENES_ONLY from the config file.\n";
+}
+
+if (exists $CONF{CANDIDATE_BAM_FLANK}) {
+    die "[ERROR] CANDIDATE_BAM_FLANK has been removed because candidate gene BAM extraction is no longer part of the workflow.\n"
+      . "        Please delete CANDIDATE_BAM_FLANK from the config file.\n";
+}
+
+# ------------------------------------------------------------
 # Algorithm parameters checked by main pipeline
 # ------------------------------------------------------------
 my $target_region_flank = get_conf_required(\%CONF, "TARGET_REGION_FLANK");
@@ -135,6 +147,12 @@ validate_nonnegative_integer("TARGET_REGION_FLANK", $target_region_flank);
 
 my $target_bam_threads = get_conf_required(\%CONF, "TARGET_BAM_THREADS");
 validate_positive_integer("TARGET_BAM_THREADS", $target_bam_threads);
+
+my $split_read_threads = get_conf_required(\%CONF, "SPLIT_READ_THREADS");
+validate_positive_integer("SPLIT_READ_THREADS", $split_read_threads);
+
+my $discordant_read_threads = get_conf_required(\%CONF, "DISCORDANT_READ_THREADS");
+validate_positive_integer("DISCORDANT_READ_THREADS", $discordant_read_threads);
 
 my $evidence_overlap_fraction = get_conf_required(\%CONF, "EVIDENCE_OVERLAP_FRACTION");
 validate_fraction("EVIDENCE_OVERLAP_FRACTION", $evidence_overlap_fraction);
@@ -154,6 +172,20 @@ my %CUSUM = (
 
 validate_cusum_params(\%CUSUM);
 
+my %TLEN;
+
+if ($run_tlen_qc) {
+    %TLEN = (
+        max_pairs   => get_conf_required(\%CONF, "TLEN_MAX_PAIRS"),
+        threads     => get_conf_required(\%CONF, "TLEN_THREADS"),
+        random_seed => get_conf_required(\%CONF, "TLEN_RANDOM_SEED"),
+    );
+
+    validate_positive_integer("TLEN_MAX_PAIRS",  $TLEN{max_pairs});
+    validate_positive_integer("TLEN_THREADS",    $TLEN{threads});
+    validate_integer("TLEN_RANDOM_SEED",         $TLEN{random_seed});
+}
+
 # ------------------------------------------------------------
 # Annotation files
 # ------------------------------------------------------------
@@ -169,39 +201,31 @@ my $gene_txt = resolve_config_path(
     $project_root
 );
 
+my $core_gene_list = resolve_config_path(
+    get_conf_required(\%CONF, "HCM_CORE_GENE_LIST"),
+    $project_root
+);
+
 die "[ERROR] REFSEQ_MANE_SELECT_EXON_TXT file not found: $exon_txt\n"
     unless -s $exon_txt;
 
 die "[ERROR] REFSEQ_MANE_SELECT_GENE_TXT file not found: $gene_txt\n"
     unless -s $gene_txt;
 
-check_exon_txt_format($exon_txt);
-check_gene_txt_format($gene_txt);
-
-my $core_gene_list = resolve_config_path(
-    get_conf_required(\%CONF, "HCM_CORE_GENE_LIST"),
-    $project_root
-);
-
 die "[ERROR] HCM_CORE_GENE_LIST file not found: $core_gene_list\n"
     unless -s $core_gene_list;
 
-if (exists $CONF{ANALYZE_CORE_GENES_ONLY}) {
-    die "[ERROR] ANALYZE_CORE_GENES_ONLY has been removed.\n"
-      . "        HCMExonDel now always analyzes HCM core genes from HCM_CORE_GENE_LIST.\n"
-      . "        Please delete ANALYZE_CORE_GENES_ONLY from the config file.\n";
-}
-
-if (exists $CONF{CANDIDATE_BAM_FLANK}) {
-    die "[ERROR] CANDIDATE_BAM_FLANK has been removed because candidate gene BAM extraction is no longer part of the workflow.\n"
-      . "        Please delete CANDIDATE_BAM_FLANK from the config file.\n";
-}
+check_exon_txt_format($exon_txt);
+check_gene_txt_format($gene_txt);
+check_core_gene_list_format($core_gene_list);
 
 # ------------------------------------------------------------
 # Output directory
 # ------------------------------------------------------------
 $outdir = abs_path($outdir) || $outdir;
+
 make_path($outdir) unless -d $outdir;
+
 $outdir = abs_path($outdir);
 
 # ------------------------------------------------------------
@@ -225,16 +249,16 @@ my %SCRIPT = (
 );
 
 my @required_scripts = qw/
-  target_bam
-  depth
-  sample_cusum
-  cusum_depth
-  plot_depth
-  split_extract
-  split_cluster
-  discordant
-  merge
-  annotate
+    target_bam
+    depth
+    sample_cusum
+    cusum_depth
+    plot_depth
+    split_extract
+    split_cluster
+    discordant
+    merge
+    annotate
 /;
 
 push @required_scripts, qw/sample_base_ratio calc_ratio/
@@ -251,6 +275,7 @@ for my $key (@required_scripts) {
 # BAM list
 # ------------------------------------------------------------
 my @samples = read_bam_list($bam_list);
+
 die "[ERROR] No valid sample found in BAM list: $bam_list\n"
     unless @samples;
 
@@ -271,8 +296,11 @@ print_summary(
     run_tlen_qc                 => $run_tlen_qc,
     target_region_flank         => $target_region_flank,
     target_bam_threads          => $target_bam_threads,
+    split_read_threads          => $split_read_threads,
+    discordant_read_threads     => $discordant_read_threads,
     evidence_overlap_fraction   => $evidence_overlap_fraction,
     cusum_ref                   => \%CUSUM,
+    tlen_ref                    => \%TLEN,
     sample_num                  => scalar(@samples),
 );
 
@@ -320,6 +348,7 @@ exit 0;
 # ============================================================
 # Main shell writer
 # ============================================================
+
 sub write_sample_shell {
     my %args = @_;
 
@@ -383,7 +412,6 @@ sub write_sample_shell {
         "--bam",    shell_quote($bam),
         "--outdir", shell_quote($dir_ref->{target_bam}),
     );
-
     write_cmd(
         $SH,
         "Step 00: extract_target_bam",
@@ -400,7 +428,6 @@ sub write_sample_shell {
         "--sample", shell_quote($sample),
         "--out",    shell_quote($out_ref->{depth}),
     );
-
     write_cmd(
         $SH,
         "Step 01: gene_mean_depth",
@@ -412,14 +439,13 @@ sub write_sample_shell {
         " ",
         shell_quote($perl),
         shell_quote($script_ref->{sample_cusum}),
-        "--config", shell_quote($config),
-        "--in-dir", shell_quote($out_ref->{gene_depth_dir}),
+        "--config",  shell_quote($config),
+        "--in-dir",  shell_quote($out_ref->{gene_depth_dir}),
         "--out-dir", shell_quote($out_ref->{cusum_dir}),
-        "--out", shell_quote($out_ref->{cusum_all}),
-        "--perl", shell_quote($perl),
-        "--script", shell_quote($script_ref->{cusum_depth}),
+        "--out",     shell_quote($out_ref->{cusum_all}),
+        "--perl",    shell_quote($perl),
+        "--script",  shell_quote($script_ref->{cusum_depth}),
     );
-
     write_cmd(
         $SH,
         "Step 02: cusum_depth_evidence",
@@ -439,7 +465,7 @@ sub write_sample_shell {
         );
 
         if ($output_base_depth_ratio_all) {
-            $cmd .= " --ratio-all " . shell_quote($out_ref->{base_depth_ratio_all});
+            $cmd .= " --ratio-all "   . shell_quote($out_ref->{base_depth_ratio_all});
             $cmd .= " --summary-all " . shell_quote($out_ref->{base_depth_summary_all});
         }
 
@@ -449,9 +475,9 @@ sub write_sample_shell {
             $cmd,
             "$dir_ref->{log}/03.base_depth_ratio.log"
         );
-    } else {
-        $cmd = "echo "
-          . shell_quote("[INFO] OUTPUT_BASE_DEPTH_RATIO=0, skip Step 03 base_depth_ratio");
+    }
+    else {
+        $cmd = "echo " . shell_quote("[INFO] OUTPUT_BASE_DEPTH_RATIO=0, skip Step 03 base_depth_ratio");
 
         write_cmd(
             $SH,
@@ -469,7 +495,6 @@ sub write_sample_shell {
         "--input",  shell_quote($out_ref->{all_window_ratio}),
         "--output", shell_quote($out_ref->{depth_plot_pdf}),
     );
-
     write_cmd(
         $SH,
         "Step 04: plot_depth_ratio",
@@ -486,7 +511,6 @@ sub write_sample_shell {
         "--sample", shell_quote($sample),
         "--out",    shell_quote($out_ref->{split_raw}),
     );
-
     write_cmd(
         $SH,
         "Step 05: extract_sa_split_reads",
@@ -502,7 +526,6 @@ sub write_sample_shell {
         "--input",   shell_quote($out_ref->{split_raw}),
         "--outfile", shell_quote($out_ref->{split_cluster}),
     );
-
     write_cmd(
         $SH,
         "Step 06: cluster_sa_split_reads",
@@ -515,19 +538,19 @@ sub write_sample_shell {
             " ",
             shell_quote($perl),
             shell_quote($script_ref->{tlen_extract}),
-            shell_quote($out_ref->{target_bam}),
-            shell_quote($out_ref->{valid_tlen}),
+            "--config", shell_quote($config),
+            "--bam",    shell_quote($out_ref->{target_bam}),
+            "--out",    shell_quote($out_ref->{valid_tlen}),
         );
-
         write_cmd(
             $SH,
             "Step 07: extract_valid_tlen",
             $cmd,
             "$dir_ref->{log}/07.extract_valid_tlen.log"
         );
-    } else {
-        $cmd = "echo "
-          . shell_quote("[INFO] RUN_TLEN_QC=0, skip Step 07 extract_valid_tlen");
+    }
+    else {
+        $cmd = "echo " . shell_quote("[INFO] RUN_TLEN_QC=0, skip Step 07 extract_valid_tlen");
 
         write_cmd(
             $SH,
@@ -545,16 +568,15 @@ sub write_sample_shell {
             shell_quote($out_ref->{valid_tlen}),
             shell_quote($out_ref->{tlen_plot_pdf}),
         );
-
         write_cmd(
             $SH,
             "Step 08: plot_tlen_distribution",
             $cmd,
             "$dir_ref->{log}/08.plot_tlen_distribution.log"
         );
-    } else {
-        $cmd = "echo "
-          . shell_quote("[INFO] RUN_TLEN_QC=0, skip Step 08 plot_tlen_distribution");
+    }
+    else {
+        $cmd = "echo " . shell_quote("[INFO] RUN_TLEN_QC=0, skip Step 08 plot_tlen_distribution");
 
         write_cmd(
             $SH,
@@ -573,7 +595,6 @@ sub write_sample_shell {
         "--sample", shell_quote($sample),
         "--out",    shell_quote($out_ref->{discordant}),
     );
-
     write_cmd(
         $SH,
         "Step 09: discordant_reads",
@@ -592,7 +613,6 @@ sub write_sample_shell {
         "--min-overlap", shell_quote($evidence_overlap_fraction),
         "--out",         shell_quote($out_ref->{merged}),
     );
-
     write_cmd(
         $SH,
         "Step 10: merge_evidence",
@@ -608,7 +628,6 @@ sub write_sample_shell {
         "--input",  shell_quote($out_ref->{merged}),
         "--out",    shell_quote($out_ref->{annotated}),
     );
-
     write_cmd(
         $SH,
         "Step 11: annotate_candidates",
@@ -630,6 +649,7 @@ sub write_sample_shell {
 
     if ($output_base_depth_ratio) {
         print $SH "echo \"[INFO] Base depth ratio dir : $out_ref->{base_depth_ratio_dir}\"\n";
+
         if ($output_base_depth_ratio_all) {
             print $SH "echo \"[INFO] Base depth ratio all : $out_ref->{base_depth_ratio_all}\"\n";
             print $SH "echo \"[INFO] Base depth summary all : $out_ref->{base_depth_summary_all}\"\n";
@@ -691,6 +711,10 @@ set -euo pipefail
 #   Step 09. discordant_reads
 #   Step 10. merge_evidence
 #   Step 11. annotate_candidates
+#
+# Evidence merge logic:
+#   split cluster is the candidate backbone;
+#   depth and discordant evidence are used for validation.
 ############################################################
 
 HEADER
@@ -703,6 +727,7 @@ sub write_block {
 
 sub write_cmd {
     my ($fh, $message, $cmd, $log) = @_;
+
     print $fh "echo \"[INFO] $message \$(date)\"\n";
     print $fh "$cmd > " . shell_quote($log) . " 2>&1\n\n";
 }
@@ -710,6 +735,7 @@ sub write_cmd {
 # ============================================================
 # Directory and output path preparation
 # ============================================================
+
 sub prepare_sample_dirs {
     my ($outdir, $sample, $force) = @_;
 
@@ -743,32 +769,33 @@ sub build_sample_outputs {
     my $prefix = "$dir_ref->{depth}/$sample.depth_candidates";
 
     my %out = (
-        target_bam          => "$dir_ref->{target_bam}/$sample.target.bam",
-        target_bai          => "$dir_ref->{target_bam}/$sample.target.bam.bai",
-        target_bed          => "$dir_ref->{target_bam}/$sample.target_regions.bed",
-        target_region_tsv   => "$dir_ref->{target_bam}/$sample.target_regions.tsv",
-        target_bam_summary  => "$dir_ref->{target_bam}/$sample.target_bam.summary.tsv",
+        target_bam             => "$dir_ref->{target_bam}/$sample.target.bam",
+        target_bai             => "$dir_ref->{target_bam}/$sample.target.bam.bai",
+        target_bed             => "$dir_ref->{target_bam}/$sample.target_regions.bed",
+        target_region_tsv      => "$dir_ref->{target_bam}/$sample.target_regions.tsv",
+        target_bam_summary     => "$dir_ref->{target_bam}/$sample.target_bam.summary.tsv",
 
-        depth               => "$prefix.tsv",
-        all_window_ratio    => "$prefix.all_window_ratio.tsv",
-        depth_plot_pdf      => "$dir_ref->{depth}/$sample.window_del.per_gene.pdf",
-        gene_depth_dir      => "$prefix.gene_depth_files",
-        cusum_dir           => "$prefix.cusum",
-        cusum_all           => "$prefix.cusum.all.tsv",
+        depth                  => "$prefix.tsv",
+        all_window_ratio       => "$prefix.all_window_ratio.tsv",
+        depth_plot_pdf         => "$dir_ref->{depth}/$sample.window_del.per_gene.pdf",
+        gene_depth_dir         => "$prefix.gene_depth_files",
 
-        base_depth_ratio_dir     => "$prefix.base_depth_ratio",
-        base_depth_ratio_all     => "$prefix.base_depth_ratio.all.tsv",
-        base_depth_summary_all   => "$prefix.base_depth.summary.all.tsv",
+        cusum_dir              => "$prefix.cusum",
+        cusum_all              => "$prefix.cusum.all.tsv",
 
-        split_raw           => "$dir_ref->{split}/$sample.split_reads.tsv",
-        split_cluster       => "$dir_ref->{split}/$sample.split_reads.clusters.tsv",
+        base_depth_ratio_dir   => "$prefix.base_depth_ratio",
+        base_depth_ratio_all   => "$prefix.base_depth_ratio.all.tsv",
+        base_depth_summary_all => "$prefix.base_depth.summary.all.tsv",
 
-        valid_tlen          => "$dir_ref->{discordant}/$sample.valid_tlen.tsv",
-        tlen_plot_pdf       => "$dir_ref->{discordant}/$sample.tlen_distribution.pdf",
-        discordant          => "$dir_ref->{discordant}/$sample.discordant_reads.tsv",
+        split_raw              => "$dir_ref->{split}/$sample.split_reads.tsv",
+        split_cluster          => "$dir_ref->{split}/$sample.split_reads.clusters.tsv",
 
-        merged              => "$dir_ref->{candidate}/$sample.merged_candidates.tsv",
-        annotated           => "$dir_ref->{report}/$sample.annotated_candidates.tsv",
+        valid_tlen             => "$dir_ref->{discordant}/$sample.valid_tlen.tsv",
+        tlen_plot_pdf          => "$dir_ref->{discordant}/$sample.tlen_distribution.pdf",
+        discordant             => "$dir_ref->{discordant}/$sample.discordant_reads.tsv",
+
+        merged                 => "$dir_ref->{candidate}/$sample.merged_candidates.tsv",
+        annotated              => "$dir_ref->{report}/$sample.annotated_candidates.tsv",
     );
 
     return %out;
@@ -777,6 +804,7 @@ sub build_sample_outputs {
 # ============================================================
 # BAM list
 # ============================================================
+
 sub read_bam_list {
     my ($file) = @_;
 
@@ -806,6 +834,7 @@ sub read_bam_list {
             unless @fields == 2;
 
         my ($sample, $bam) = @fields;
+
         $sample =~ s/^\s+|\s+$//g;
         $bam    =~ s/^\s+|\s+$//g;
 
@@ -873,6 +902,7 @@ sub check_bam_index {
 # ============================================================
 # Config and path helpers
 # ============================================================
+
 sub read_config {
     my ($file) = @_;
 
@@ -888,6 +918,7 @@ sub read_config {
         next if $line =~ /^\s*$/;
         next if $line =~ /^\s*#/;
 
+        # Remove inline comments: KEY=value # comment
         $line =~ s/\s+#.*$//;
 
         next unless $line =~ /^\s*([^=\s]+)\s*=\s*(.*?)\s*$/;
@@ -897,6 +928,7 @@ sub read_config {
 
         $key =~ s/^\s+|\s+$//g;
         $val =~ s/^\s+|\s+$//g;
+
         $val =~ s/^['"]//;
         $val =~ s/['"]$//;
 
@@ -956,12 +988,15 @@ sub resolve_config_path {
 
     if ($path =~ m{^/}) {
         my $abs = abs_path($path);
-        die "[ERROR] Path not found: $path\n" unless defined $abs;
+
+        die "[ERROR] Path not found: $path\n"
+            unless defined $abs;
+
         return $abs;
     }
 
     my $full = "$project_root/$path";
-    my $abs = abs_path($full);
+    my $abs  = abs_path($full);
 
     die "[ERROR] Path not found: $full\n"
         unless defined $abs;
@@ -972,10 +1007,11 @@ sub resolve_config_path {
 # ============================================================
 # Validation helpers
 # ============================================================
+
 sub validate_cusum_params {
     my ($cusum_ref) = @_;
 
-    validate_baseline("CUSUM_BASELINE",       $cusum_ref->{baseline});
+    validate_baseline("CUSUM_BASELINE",              $cusum_ref->{baseline});
     validate_positive_integer("CUSUM_BIN_SIZE",       $cusum_ref->{bin_size});
     validate_nonnegative_number("CUSUM_K",            $cusum_ref->{k});
     validate_positive_number("CUSUM_H",               $cusum_ref->{h});
@@ -1029,6 +1065,15 @@ sub validate_nonnegative_integer {
     return 1;
 }
 
+sub validate_integer {
+    my ($name, $v) = @_;
+
+    die "[ERROR] $name must be an integer: $v\n"
+        unless defined $v && $v =~ /^-?\d+$/;
+
+    return 1;
+}
+
 sub validate_positive_number {
     my ($name, $v) = @_;
 
@@ -1059,11 +1104,13 @@ sub check_executable {
     die "[ERROR] Empty executable for $name\n"
         unless defined $cmd && $cmd ne "";
 
-    if ($cmd =~ /\//) {
+    if ($cmd =~ m{/}) {
         die "[ERROR] $name executable not found or not executable: $cmd\n"
             unless -x $cmd;
-    } else {
+    }
+    else {
         my $ret = system("command -v $cmd >/dev/null 2>&1");
+
         die "[ERROR] $name executable not found in PATH: $cmd\n"
             if $ret != 0;
     }
@@ -1115,6 +1162,7 @@ sub check_table_header {
         or die "[ERROR] Cannot open $desc file: $file\n";
 
     my $header = <$FH>;
+
     close $FH;
 
     die "[ERROR] Empty $desc file: $file\n"
@@ -1134,9 +1182,60 @@ sub check_table_header {
     return 1;
 }
 
+sub check_core_gene_list_format {
+    my ($file) = @_;
+
+    open my $FH, "<", $file
+        or die "[ERROR] Cannot open HCM_CORE_GENE_LIST: $file\n";
+
+    my $line_no      = 0;
+    my $data_line_no = 0;
+    my $gene_count   = 0;
+
+    while (my $line = <$FH>) {
+        chomp $line;
+        $line =~ s/\r$//;
+        $line_no++;
+
+        next if $line =~ /^\s*$/;
+        next if $line =~ /^\s*#/;
+
+        $line =~ s/\s+#.*$//;
+        $line =~ s/^\s+|\s+$//g;
+
+        next if $line eq "";
+
+        $data_line_no++;
+
+        my @f = split /\s+/, $line;
+        my $gene = $f[0];
+        $gene = "" unless defined $gene;
+
+        if ($data_line_no == 1 && $gene =~ /^Gene$/i) {
+            next;
+        }
+
+        die "[ERROR] Empty gene symbol in HCM_CORE_GENE_LIST at line $line_no\n"
+            if $gene eq "";
+
+        die "[ERROR] Invalid gene symbol in HCM_CORE_GENE_LIST at line $line_no: $gene\n"
+            unless $gene =~ /^[A-Za-z0-9_.-]+$/;
+
+        $gene_count++;
+    }
+
+    close $FH;
+
+    die "[ERROR] No core genes found in HCM_CORE_GENE_LIST: $file\n"
+        unless $gene_count > 0;
+
+    return 1;
+}
+
 # ============================================================
 # Shell and output helpers
 # ============================================================
+
 sub shell_quote {
     my ($str) = @_;
 
@@ -1182,20 +1281,37 @@ sub print_summary {
     print "KEEP_TMP                    : $args{keep_tmp}\n";
 
     print "\n";
-    print "Target BAM parameters\n";
+    print "Target BAM and read extraction parameters\n";
     print "------------------------------------------------------------\n";
-    print "TARGET_REGION_FLANK : $args{target_region_flank}\n";
-    print "TARGET_BAM_THREADS  : $args{target_bam_threads}\n";
+    print "TARGET_REGION_FLANK     : $args{target_region_flank}\n";
+    print "TARGET_BAM_THREADS      : $args{target_bam_threads}\n";
+    print "SPLIT_READ_THREADS      : $args{split_read_threads}\n";
+    print "DISCORDANT_READ_THREADS : $args{discordant_read_threads}\n";
+
+    if ($args{run_tlen_qc}) {
+        my $t = $args{tlen_ref};
+
+        print "\n";
+        print "TLEN QC parameters\n";
+        print "------------------------------------------------------------\n";
+        print "TLEN_MAX_PAIRS   : $t->{max_pairs}\n";
+        print "TLEN_THREADS     : $t->{threads}\n";
+        print "TLEN_RANDOM_SEED : $t->{random_seed}\n";
+    }
 
     print "\n";
     print "Evidence merging\n";
     print "------------------------------------------------------------\n";
+    print "Merge backbone            : split-read cluster\n";
+    print "Supporting evidence       : CUSUM depth + discordant read pairs\n";
     print "EVIDENCE_OVERLAP_FRACTION : $args{evidence_overlap_fraction}\n";
 
     print "\n";
     print "CUSUM parameters\n";
     print "------------------------------------------------------------\n";
+
     my $c = $args{cusum_ref};
+
     print "CUSUM_BASELINE      : $c->{baseline}\n";
     print "CUSUM_BIN_SIZE      : $c->{bin_size}\n";
     print "CUSUM_K             : $c->{k}\n";
@@ -1218,14 +1334,14 @@ Usage:
     --outdir results
 
 Required:
-  --config    HCMExonDel config file.
-  --bam-list  TAB-delimited BAM list with two columns:
-              SampleID    /absolute/path/to/sample.bam
+  --config      HCMExonDel config file.
+  --bam-list    TAB-delimited BAM list with two columns:
+                  SampleID    /absolute/path/to/sample.bam
 
 Optional:
-  --outdir    Output directory. Default: results
-  --force     Allow writing into existing sample output directories.
-  --help      Show this help message.
+  --outdir      Output directory. Default: results
+  --force       Allow writing into existing sample output directories.
+  --help        Show this help message.
 
 Generated output:
   OUTDIR/SAMPLE/SAMPLE.run.sh
@@ -1248,6 +1364,8 @@ Notes:
   1. HCMExonDel only analyzes HCM core genes.
   2. The original WGS BAM is used only to generate SAMPLE.target.bam.
   3. All downstream analyses use SAMPLE.target.bam.
+  4. merge_evidence.pl uses split clusters as candidate events and validates them
+     with depth evidence and discordant read-pair evidence.
 
 Example:
   perl HCMExonDel.pl \
