@@ -1,6 +1,5 @@
 #!/usr/bin/env perl
 # -*- coding: utf-8 -*-
-
 use strict;
 use warnings;
 use Getopt::Long;
@@ -19,6 +18,7 @@ use Cwd qw(abs_path);
 #      - supported columns:
 #          Gene
 #          Annotated_Gene
+#
 #   2. Genes from HCM_CORE_GENE_LIST in config
 #      - expected format:
 #          Gene    Classification
@@ -33,8 +33,8 @@ use Cwd qw(abs_path);
 #   REFSEQ_MANE_SELECT_GENE_TXT in config
 #
 # Extraction rule:
-#   Strictly extract BAM according to gene coordinates.
-#   No upstream or downstream flanking region is added.
+#   Extract BAM according to gene coordinates.
+#   Optional upstream/downstream flanking region can be added by --flank.
 #
 # Output:
 #   outdir/
@@ -45,18 +45,20 @@ use Cwd qw(abs_path);
 #
 # Notes:
 #   1. Gene extraction is based on full gene coordinates.
-#   2. If candidate file is empty, the script still uses HCM_CORE_GENE_LIST.
-#   3. If one gene has multiple coordinate records, all regions are extracted
+#   2. If --flank 0 is used, behavior is the same as the old version.
+#   3. If candidate file is empty, the script still uses HCM_CORE_GENE_LIST.
+#   4. If one gene has multiple coordinate records, all regions are extracted
 #      into the same gene BAM.
 # ============================================================
 
-my ($config, $candidate_tsv, $bam, $outdir, $help);
+my ($config, $candidate_tsv, $bam, $outdir, $flank, $help);
 
 GetOptions(
     "config|conf=s" => \$config,
     "candidate|c=s" => \$candidate_tsv,
     "bam|b=s"       => \$bam,
     "outdir|o=s"    => \$outdir,
+    "flank=i"       => \$flank,
     "help|h"        => \$help,
 ) or die usage();
 
@@ -69,6 +71,11 @@ die "[ERROR] --config is required\n"    unless defined $config && $config ne "";
 die "[ERROR] --candidate is required\n" unless defined $candidate_tsv && $candidate_tsv ne "";
 die "[ERROR] --bam is required\n"       unless defined $bam && $bam ne "";
 die "[ERROR] --outdir is required\n"    unless defined $outdir && $outdir ne "";
+
+$flank = 0 unless defined $flank;
+
+die "[ERROR] --flank must be a non-negative integer: $flank\n"
+    unless $flank =~ /^\d+$/ && $flank >= 0;
 
 die "[ERROR] Config file not found: $config\n" unless -s $config;
 die "[ERROR] BAM file not found: $bam\n"       unless -s $bam;
@@ -100,15 +107,22 @@ my $samtools = get_samtools_from_conf(\%conf);
 check_executable($samtools, "samtools");
 
 print STDERR "[INFO] Extract gene BAM started\n";
-print STDERR "[INFO] Config              : $config\n";
-print STDERR "[INFO] Project root        : $project_root\n";
-print STDERR "[INFO] Candidate TSV       : $candidate_tsv\n";
-print STDERR "[INFO] HCM core gene list  : $core_gene_list\n";
-print STDERR "[INFO] Gene coordinate TXT : $gene_txt\n";
-print STDERR "[INFO] Input BAM           : $bam\n";
-print STDERR "[INFO] Output dir          : $outdir\n";
-print STDERR "[INFO] Samtools            : $samtools\n";
-print STDERR "[INFO] Extract mode        : strict gene coordinates\n";
+print STDERR "[INFO] Config             : $config\n";
+print STDERR "[INFO] Project root       : $project_root\n";
+print STDERR "[INFO] Candidate TSV      : $candidate_tsv\n";
+print STDERR "[INFO] HCM core gene list : $core_gene_list\n";
+print STDERR "[INFO] Gene coordinate TXT: $gene_txt\n";
+print STDERR "[INFO] Input BAM          : $bam\n";
+print STDERR "[INFO] Output dir         : $outdir\n";
+print STDERR "[INFO] Samtools           : $samtools\n";
+print STDERR "[INFO] Flank size         : $flank bp\n";
+
+if ($flank == 0) {
+    print STDERR "[INFO] Extract mode       : strict gene coordinates\n";
+}
+else {
+    print STDERR "[INFO] Extract mode       : gene coordinates with +/- $flank bp flank\n";
+}
 
 # ------------------------------------------------------------
 # Step 1. Read genes from merged_candidates.tsv
@@ -136,8 +150,8 @@ else {
 # ------------------------------------------------------------
 
 my %core_genes = read_core_gene_list($core_gene_list);
-my $n_core = scalar keys %core_genes;
 
+my $n_core = scalar keys %core_genes;
 print STDERR "[INFO] HCM core genes found: $n_core\n";
 
 # ------------------------------------------------------------
@@ -167,12 +181,13 @@ die "[ERROR] No target gene found from candidate TSV or HCM core gene list\n"
 print STDERR "[INFO] Total target genes for BAM extraction: $n_target\n";
 
 # ------------------------------------------------------------
-# Step 4. Read gene coordinates
+# Step 4. Read gene coordinates and apply flank
 # ------------------------------------------------------------
 
-my %gene_regions = read_gene_regions($gene_txt, \%target_genes);
+my %gene_regions = read_gene_regions($gene_txt, \%target_genes, $flank);
 
 my $matched_count = scalar keys %gene_regions;
+
 print STDERR "[INFO] Genes matched in gene TXT: $matched_count / $n_target\n";
 
 for my $gene (sort keys %target_genes) {
@@ -199,8 +214,8 @@ for my $gene (sort keys %gene_regions) {
     my $out_bam   = "$outdir/$safe_gene.bam";
 
     print STDERR "[INFO] Extracting gene: $gene [$source]\n";
-    print STDERR "[INFO] Regions        : ", join(",", @regions), "\n";
-    print STDERR "[INFO] Output BAM     : $out_bam\n";
+    print STDERR "[INFO] Regions       : ", join(",", @regions), "\n";
+    print STDERR "[INFO] Output BAM    : $out_bam\n";
 
     my @view_cmd = (
         $samtools,
@@ -229,6 +244,7 @@ for my $gene (sort keys %gene_regions) {
         unless -s "$out_bam.bai";
 
     print STDERR "[INFO] Finished gene: $gene\n";
+
     $done++;
 }
 
@@ -293,8 +309,8 @@ sub get_required_conf_path {
 
     die "[ERROR] Required config key '$key' not found for $desc\n"
         unless exists $conf_ref->{$key}
-            && defined $conf_ref->{$key}
-            && $conf_ref->{$key} ne "";
+        && defined $conf_ref->{$key}
+        && $conf_ref->{$key} ne "";
 
     my $path = $conf_ref->{$key};
 
@@ -337,6 +353,8 @@ sub check_executable {
         die "[ERROR] $name not found in PATH: $cmd\n"
             if $check != 0;
     }
+
+    return 1;
 }
 
 sub read_candidate_genes {
@@ -372,6 +390,7 @@ sub read_candidate_genes {
     if ($gene_idx < 0) {
         print STDERR "[WARN] No Gene or Annotated_Gene column found in candidate file: $file\n";
         print STDERR "[WARN] Candidate genes will be ignored. HCM core genes will still be used.\n";
+
         close $fh;
         return ();
     }
@@ -385,7 +404,6 @@ sub read_candidate_genes {
         next if $line =~ /^\s*$/;
 
         my @f = split /\t/, $line, -1;
-
         next unless defined $f[$gene_idx];
 
         my $gene_field = $f[$gene_idx];
@@ -426,8 +444,8 @@ sub read_core_gene_list {
         #   PRKAG2  Definitive
         # Only the first column is used.
         my @f = split /\t/, $line, -1;
-
         my $gene = $f[0];
+
         $gene =~ s/^\s+|\s+$//g;
 
         next if $gene eq "";
@@ -481,7 +499,7 @@ sub add_gene_field_to_hash {
 }
 
 sub read_gene_regions {
-    my ($file, $target_genes_ref) = @_;
+    my ($file, $target_genes_ref, $flank) = @_;
 
     open my $fh, "<", $file
         or die "[ERROR] Cannot open gene TXT file $file: $!\n";
@@ -559,7 +577,12 @@ sub read_gene_regions {
             next;
         }
 
-        my $region = "$chr:$start-$end";
+        my $region_start = $start - $flank;
+        my $region_end   = $end + $flank;
+
+        $region_start = 1 if $region_start < 1;
+
+        my $region = "$chr:$region_start-$region_end";
 
         push @{ $gene_regions{$gene} }, $region;
     }
@@ -630,22 +653,17 @@ sub shell_quote {
 
 sub usage {
     return <<"USAGE";
-
 Usage:
   perl extract_candidate_gene_bam.pl \\
     --config conf/hcm_exondel.example.conf \\
     --candidate test/test_results/25B09089386/04.candidates/25B09089386.merged_candidates.tsv \\
     --bam /path/to/sample.bam \\
-    --outdir test/test_results/25B09089386/05.gene_bam
+    --outdir test/test_results/25B09089386/05.gene_bam \\
+    --flank 0
 
 Required:
   --config|-conf
       Config file.
-
-      Required config keys:
-        SAMTOOLS
-        REFSEQ_MANE_SELECT_GENE_TXT
-        HCM_CORE_GENE_LIST
 
   --candidate|-c
       merged_candidates.tsv file.
@@ -663,8 +681,18 @@ Required:
   --outdir|-o
       Output directory.
 
+Optional:
+  --flank
+      Upstream/downstream flanking size in bp around gene coordinates.
+      Default: 0
+
   --help|-h
       Show this help message.
+
+Required config keys:
+  SAMTOOLS
+  REFSEQ_MANE_SELECT_GENE_TXT
+  HCM_CORE_GENE_LIST
 
 Gene extraction logic:
   target_genes = union(
@@ -681,8 +709,11 @@ HCM_CORE_GENE_LIST format:
 Only the first column is used as gene symbol.
 
 Extraction rule:
-  Strictly extract BAM by gene coordinates from REFSEQ_MANE_SELECT_GENE_TXT.
-  No flanking region is added.
+  If --flank 0:
+      strictly extract BAM by gene coordinates from REFSEQ_MANE_SELECT_GENE_TXT.
+
+  If --flank N:
+      extract gene coordinates with N bp upstream/downstream extension.
 
 Output:
   outdir/
@@ -694,9 +725,8 @@ Example:
     --config conf/hcm_exondel.example.conf \\
     --candidate test/test_results/25B09089386/04.candidates/25B09089386.merged_candidates.tsv \\
     --bam /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam \\
-    --outdir test/test_results/25B09089386/05.gene_bam
-
+    --outdir test/test_results/25B09089386/05.gene_bam \\
+    --flank 0
 USAGE
 }
-
 
