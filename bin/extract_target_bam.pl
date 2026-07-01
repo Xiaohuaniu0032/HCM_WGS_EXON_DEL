@@ -1,4 +1,5 @@
 #!/usr/bin/env perl
+
 use strict;
 use warnings;
 use Getopt::Long;
@@ -65,11 +66,7 @@ if ($help) {
     exit 0;
 }
 
-die usage()
-    unless defined $config
-        && defined $sample
-        && defined $bam
-        && defined $outdir;
+die usage() unless defined $config && defined $sample && defined $bam && defined $outdir;
 
 # -----------------------------
 # Validate runtime I/O arguments
@@ -77,6 +74,7 @@ die usage()
 $config = abs_path($config) if -e $config;
 die "[ERROR] Config file not found: $config\n"
     unless defined $config && -s $config;
+
 die "[ERROR] Config path must be absolute after resolution: $config\n"
     unless $config =~ m{^/};
 
@@ -87,8 +85,10 @@ die "[ERROR] Invalid sample name: $sample\n"
 $bam = abs_path($bam) if -e $bam;
 die "[ERROR] BAM file not found: $bam\n"
     unless defined $bam && -s $bam;
+
 die "[ERROR] BAM path must be absolute after resolution: $bam\n"
     unless $bam =~ m{^/};
+
 die "[ERROR] BAM file must end with .bam: $bam\n"
     unless $bam =~ /\.bam$/i;
 
@@ -97,6 +97,7 @@ die "[ERROR] Output directory path must be absolute: $outdir\n"
 
 make_path($outdir) unless -d $outdir;
 $outdir = abs_path($outdir);
+
 die "[ERROR] Cannot create output directory: $outdir\n"
     unless defined $outdir && -d $outdir;
 
@@ -104,6 +105,7 @@ die "[ERROR] Cannot create output directory: $outdir\n"
 # Read config
 # -----------------------------
 my %CONF = read_config($config);
+
 my $project_root = detect_project_root($config);
 
 my $samtools = get_conf_required(\%CONF, "SAMTOOLS");
@@ -118,7 +120,7 @@ my $core_gene_list = resolve_config_path(
     $project_root
 );
 
-my $flank = get_conf_required(\%CONF, "TARGET_REGION_FLANK");
+my $flank   = get_conf_required(\%CONF, "TARGET_REGION_FLANK");
 my $threads = get_conf_required(\%CONF, "TARGET_BAM_THREADS");
 
 validate_nonnegative_integer("TARGET_REGION_FLANK", $flank);
@@ -176,7 +178,6 @@ my @raw_regions;
 
 for my $gene (sort keys %core_gene) {
     my $r = $gene_region{$gene};
-
     my $chr = $r->{chrom};
 
     die "[ERROR] Chromosome '$chr' for gene '$gene' is not found in BAM header/index.\n"
@@ -188,8 +189,8 @@ for my $gene (sort keys %core_gene) {
     my $target_start = $r->{start} - $flank;
     my $target_end   = $r->{end}   + $flank;
 
-    $target_start = 1 if $target_start < 1;
-    $target_end = $chr_len if $target_end > $chr_len;
+    $target_start = 1        if $target_start < 1;
+    $target_end   = $chr_len if $target_end > $chr_len;
 
     die "[ERROR] Invalid target interval after flank clipping for gene $gene: $chr:$target_start-$target_end\n"
         unless $target_start <= $target_end;
@@ -217,18 +218,22 @@ write_bed($target_bed, \@merged_regions);
 # -----------------------------
 # Extract target BAM
 # -----------------------------
-unlink $tmp_bam if -e $tmp_bam;
+unlink $tmp_bam    if -e $tmp_bam;
 unlink $target_bam if -e $target_bam;
 unlink $target_bai if -e $target_bai;
 unlink "$target_bam.csi" if -e "$target_bam.csi";
 
 run_cmd(
-    $samtools, "view",
-    "-@", $threads,
+    $samtools,
+    "view",
+    "-@",
+    $threads,
     "-bh",
     "-M",
-    "-L", $target_bed,
-    "-o", $tmp_bam,
+    "-L",
+    $target_bed,
+    "-o",
+    $tmp_bam,
     $bam
 );
 
@@ -236,9 +241,12 @@ die "[ERROR] Temporary target BAM was not generated: $tmp_bam\n"
     unless -s $tmp_bam;
 
 run_cmd(
-    $samtools, "sort",
-    "-@", $threads,
-    "-o", $target_bam,
+    $samtools,
+    "sort",
+    "-@",
+    $threads,
+    "-o",
+    $target_bam,
     $tmp_bam
 );
 
@@ -246,8 +254,10 @@ die "[ERROR] Target BAM was not generated: $target_bam\n"
     unless -s $target_bam;
 
 run_cmd(
-    $samtools, "index",
-    "-@", $threads,
+    $samtools,
+    "index",
+    "-@",
+    $threads,
     $target_bam
 );
 
@@ -258,20 +268,20 @@ unlink $tmp_bam if -e $tmp_bam;
 
 write_summary(
     $summary_file,
-    sample                => $sample,
-    config                => $config,
-    input_bam             => $bam,
-    output_bam            => $target_bam,
-    output_bam_index      => $target_bai,
-    target_bed            => $target_bed,
-    target_region_tsv     => $target_tsv,
-    core_gene_list        => $core_gene_list,
-    gene_annotation       => $gene_txt,
-    target_region_flank   => $flank,
-    target_bam_threads    => $threads,
-    n_core_genes          => scalar(keys %core_gene),
-    n_raw_gene_regions    => scalar(@raw_regions),
-    n_merged_bed_regions  => scalar(@merged_regions),
+    sample              => $sample,
+    config              => $config,
+    input_bam           => $bam,
+    output_bam          => $target_bam,
+    output_bam_index    => $target_bai,
+    target_bed          => $target_bed,
+    target_region_tsv   => $target_tsv,
+    core_gene_list      => $core_gene_list,
+    gene_annotation     => $gene_txt,
+    target_region_flank => $flank,
+    target_bam_threads  => $threads,
+    n_core_genes        => scalar(keys %core_gene),
+    n_raw_gene_regions  => scalar(@raw_regions),
+    n_merged_bed_regions => scalar(@merged_regions),
 );
 
 print "[INFO] Target BAM extraction finished.\n";
@@ -307,7 +317,7 @@ sub read_config {
         next if $line =~ /^\s*#/;
 
         # Remove inline comments:
-        # KEY=value   # comment
+        # KEY=value # comment
         $line =~ s/\s+#.*$//;
 
         next unless $line =~ /^\s*([^=\s]+)\s*=\s*(.*?)\s*$/;
@@ -363,10 +373,8 @@ sub resolve_config_path {
 
     if ($path =~ m{^/}) {
         my $abs = abs_path($path);
-
         die "[ERROR] Path not found: $path\n"
             unless defined $abs;
-
         return $abs;
     }
 
@@ -410,9 +418,9 @@ sub check_executable {
     if ($cmd =~ m{/}) {
         die "[ERROR] $name executable not found or not executable: $cmd\n"
             unless -x $cmd;
-    } else {
+    }
+    else {
         my $ret = system("command -v $cmd >/dev/null 2>&1");
-
         die "[ERROR] $name executable not found in PATH: $cmd\n"
             if $ret != 0;
     }
@@ -450,6 +458,7 @@ sub read_core_gene_list {
         or die "[ERROR] Cannot open HCM_CORE_GENE_LIST: $file\n";
 
     my $line_no = 0;
+    my $data_line_no = 0;
 
     while (my $line = <$FH>) {
         chomp $line;
@@ -459,11 +468,31 @@ sub read_core_gene_list {
         next if $line =~ /^\s*$/;
         next if $line =~ /^\s*#/;
 
-        my @f = split /\t/, $line;
-        my $g = $f[0];
+        # Remove inline comments, for example:
+        # MYH7 Definitive   # comment
+        $line =~ s/\s+#.*$//;
+        $line =~ s/^\s+|\s+$//g;
 
+        next if $line eq "";
+
+        $data_line_no++;
+
+        # Support both tab-delimited and whitespace-delimited formats:
+        #   Gene    Classification
+        #   MYH7    Definitive
+        #   MYBPC3  Definitive
+        my @f = split /\s+/, $line;
+
+        my $g = $f[0];
         $g = "" unless defined $g;
         $g =~ s/^\s+|\s+$//g;
+
+        # Skip header line:
+        #   Gene Classification
+        #   Gene<TAB>Classification
+        if ($data_line_no == 1 && $g =~ /^Gene$/i) {
+            next;
+        }
 
         die "[ERROR] Empty gene symbol in HCM_CORE_GENE_LIST at line $line_no\n"
             if $g eq "";
@@ -535,11 +564,7 @@ sub read_gene_regions {
         }
 
         die "[ERROR] Invalid gene annotation at line $line_no: empty Gene/Transcript/Chrom/Start/End\n"
-            unless $gene ne ""
-                && $tx ne ""
-                && $chr ne ""
-                && $s ne ""
-                && $e ne "";
+            unless $gene ne "" && $tx ne "" && $chr ne "" && $s ne "" && $e ne "";
 
         die "[ERROR] Invalid Start at line $line_no: $s\n"
             unless $s =~ /^\d+$/ && $s >= 1;
@@ -557,15 +582,13 @@ sub read_gene_regions {
                 end        => $e,
                 transcript => $tx,
             };
-        } else {
+        }
+        else {
             die "[ERROR] Gene $gene appears on multiple chromosomes in REFSEQ_MANE_SELECT_GENE_TXT.\n"
                 if $region{$gene}->{chrom} ne $chr;
 
-            $region{$gene}->{start} = $s
-                if $s < $region{$gene}->{start};
-
-            $region{$gene}->{end} = $e
-                if $e > $region{$gene}->{end};
+            $region{$gene}->{start} = $s if $s < $region{$gene}->{start};
+            $region{$gene}->{end}   = $e if $e > $region{$gene}->{end};
 
             $region{$gene}->{transcript} .= ",$tx"
                 unless $region{$gene}->{transcript} =~ /(?:^|,)\Q$tx\E(?:,|$)/;
@@ -636,10 +659,10 @@ sub merge_regions {
     my ($regions_ref) = @_;
 
     my @sorted = sort {
-        chrom_order_key($a->{chrom}) cmp chrom_order_key($b->{chrom})
-            || $a->{target_start} <=> $b->{target_start}
-            || $a->{target_end} <=> $b->{target_end}
-            || $a->{gene} cmp $b->{gene}
+           chrom_order_key($a->{chrom}) cmp chrom_order_key($b->{chrom})
+        || $a->{target_start} <=> $b->{target_start}
+        || $a->{target_end}   <=> $b->{target_end}
+        || $a->{gene} cmp $b->{gene}
     } @$regions_ref;
 
     my @merged;
@@ -656,7 +679,8 @@ sub merge_regions {
                 end   => $r->{target_end},
                 genes => [ $r->{gene} ],
             };
-        } else {
+        }
+        else {
             $merged[-1]->{end} = $r->{target_end}
                 if $r->{target_end} > $merged[-1]->{end};
 
@@ -685,15 +709,15 @@ sub write_region_tsv {
           Target_Start
           Target_End
           Target_Length
-        /
+          /
     ), "\n";
 
     for my $r (
         sort {
-            chrom_order_key($a->{chrom}) cmp chrom_order_key($b->{chrom})
-                || $a->{target_start} <=> $b->{target_start}
-                || $a->{target_end} <=> $b->{target_end}
-                || $a->{gene} cmp $b->{gene}
+               chrom_order_key($a->{chrom}) cmp chrom_order_key($b->{chrom})
+            || $a->{target_start} <=> $b->{target_start}
+            || $a->{target_end}   <=> $b->{target_end}
+            || $a->{gene} cmp $b->{gene}
         } @$regions_ref
     ) {
         my $len = $r->{target_end} - $r->{target_start} + 1;
@@ -752,8 +776,8 @@ sub run_cmd {
 
     system(@cmd) == 0
         or die "[ERROR] Command failed: "
-        . join(" ", map { shell_quote($_) } @cmd)
-        . "\n";
+          . join(" ", map { shell_quote($_) } @cmd)
+          . "\n";
 }
 
 sub shell_quote {
@@ -764,8 +788,7 @@ sub shell_quote {
 
     return "''" if $str eq "";
 
-    return $str
-        if $str =~ /^[A-Za-z0-9_\.\-\/\:=,\+]+$/;
+    return $str if $str =~ /^[A-Za-z0-9_\.\-\/\:=,\+]+$/;
 
     $str =~ s/'/'\\''/g;
 
@@ -811,4 +834,3 @@ Notes:
   5. The output target BAM is sorted and indexed.
 USAGE
 }
-
