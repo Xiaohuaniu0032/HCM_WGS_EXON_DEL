@@ -1,4 +1,6 @@
 #!/usr/bin/env perl
+# -*- coding: utf-8 -*-
+
 use strict;
 use warnings;
 use Getopt::Long qw(GetOptions);
@@ -7,18 +9,30 @@ use File::Path qw(make_path);
 
 # ------------------------------------------------------------
 # merge_evidence.pl
+#
 # Split-read-centered evidence merging logic.
 #
 # Core rule:
-#   For each passed split-read cluster, evaluate whether the split interval is
-#   covered by depth evidence and discordant-read evidence.
+#   For each passed split-read cluster, evaluate whether the split interval
+#   is supported by:
+#     1. CUSUM depth evidence
+#     2. Discordant read-pair evidence
 #
 # Confidence level:
 #   High     = Split + Depth + Discordant
 #   Moderate = Split + Depth only
 #   Low      = Split without Depth, regardless of discordant support
 #
-# Coordinates are treated as 1-based closed intervals.
+# Important:
+#   Split-read cluster is the candidate backbone.
+#   Depth and discordant signals are validation evidence.
+#
+# Empty-result behavior:
+#   If no passed split-read cluster exists, this script writes a header-only
+#   merged_candidates.tsv and exits normally.
+#
+# Coordinates:
+#   All coordinates are treated as 1-based closed intervals.
 # ------------------------------------------------------------
 
 my %opt = (
@@ -26,14 +40,13 @@ my %opt = (
 );
 
 GetOptions(
-    'config=s'       => \$opt{config},     # accepted for pipeline compatibility; not used here
-    'sample=s'       => \$opt{sample},
-    'depth=s'        => \$opt{depth},
-    'split=s'        => \$opt{split},
-    'discordant=s'   => \$opt{discordant},
-    'out=s'          => \$opt{out},
-    'min-overlap=f'  => \$opt{min_overlap},
-    'help'           => \$opt{help},
+    'sample=s'      => \$opt{sample},
+    'depth=s'       => \$opt{depth},
+    'split=s'       => \$opt{split},
+    'discordant=s'  => \$opt{discordant},
+    'out=s'         => \$opt{out},
+    'min-overlap=f' => \$opt{min_overlap},
+    'help'          => \$opt{help},
 ) or die usage();
 
 if ($opt{help}) {
@@ -46,33 +59,39 @@ for my $k (qw/sample depth split discordant out/) {
         unless defined $opt{$k} && $opt{$k} ne '';
 }
 
-die "[ERROR] Depth file not found or empty: $opt{depth}\n" unless -s $opt{depth};
-die "[ERROR] Split cluster file not found or empty: $opt{split}\n" unless -s $opt{split};
-die "[ERROR] Discordant file not found or empty: $opt{discordant}\n" unless -s $opt{discordant};
-die "[ERROR] --min-overlap must be >0 and <=1\n"
-    unless $opt{min_overlap} > 0 && $opt{min_overlap} <= 1;
+check_existing_file($opt{depth},      'Depth file');
+check_existing_file($opt{split},      'Split cluster file');
+check_existing_file($opt{discordant}, 'Discordant file');
 
-if (defined $opt{config} && $opt{config} ne '' && !-s $opt{config}) {
-    warn "[WARN] Config file not found: $opt{config}. This script does not use config, continue anyway.\n";
-}
+die "[ERROR] --min-overlap must be >0 and <=1\n"
+    unless defined $opt{min_overlap}
+        && $opt{min_overlap} > 0
+        && $opt{min_overlap} <= 1;
 
 log_msg("Merge evidence started");
-log_msg("Sample      : $opt{sample}");
-log_msg("Depth file  : $opt{depth}");
-log_msg("Split file  : $opt{split}");
-log_msg("Discordant  : $opt{discordant}");
-log_msg("Min overlap : $opt{min_overlap}");
-log_msg("Output      : $opt{out}");
+log_msg("Sample     : $opt{sample}");
+log_msg("Depth file : $opt{depth}");
+log_msg("Split file : $opt{split}");
+log_msg("Discordant : $opt{discordant}");
+log_msg("Min overlap: $opt{min_overlap}");
+log_msg("Output     : $opt{out}");
 
 my @split_records      = read_split_records($opt{split}, $opt{sample});
 my @depth_records      = read_interval_records($opt{depth}, $opt{sample}, 'Depth');
 my @discordant_records = read_interval_records($opt{discordant}, $opt{sample}, 'Discordant');
 
-log_msg("Split clusters loaded      : " . scalar(@split_records));
-log_msg("Depth records loaded       : " . scalar(@depth_records));
-log_msg("Discordant records loaded  : " . scalar(@discordant_records));
+log_msg("Split clusters loaded : " . scalar(@split_records));
+log_msg("Depth records loaded   : " . scalar(@depth_records));
+log_msg("Discordant loaded      : " . scalar(@discordant_records));
 
-die "[ERROR] No passed split-read cluster loaded from $opt{split}\n" unless @split_records;
+if (!@split_records) {
+    log_msg("No passed split-read cluster found. Write header-only output and exit normally.");
+    write_output($opt{out}, []);
+    log_msg("Output candidates written: 0");
+    log_msg("High=0 Moderate=0 Low=0");
+    log_msg("Merge evidence finished");
+    exit 0;
+}
 
 my %depth_by_chrom      = index_by_chrom(@depth_records);
 my %discordant_by_chrom = index_by_chrom(@discordant_records);
@@ -85,18 +104,23 @@ for my $sp (@split_records) {
     my $e     = $sp->{End};
     my $len   = interval_len($s, $e);
 
+    die "[ERROR] Invalid split interval length for "
+      . "$chrom:$s-$e in split record $sp->{Source_ID}\n"
+        unless $len > 0;
+
     # ------------------------------
     # Depth support
     # ------------------------------
-    # Depth evidence may contain several adjacent CUSUM segments for one true
-    # deletion. Therefore, depth coverage is calculated by the union of all
-    # overlapping depth intervals on the same chromosome.
+    my @depth_candidates = records_for_chrom(\%depth_by_chrom, $chrom);
+
     my @depth_overlaps = grep {
         interval_overlap_len($s, $e, $_->{Start}, $_->{End}) > 0
-    } @{ $depth_by_chrom{$chrom} || [] };
+    } @depth_candidates;
 
     my ($depth_cov_bases, $depth_cov_frac) = covered_bases_by_union(
-        \@depth_overlaps, $s, $e
+        \@depth_overlaps,
+        $s,
+        $e
     );
 
     my $depth_support = ($depth_cov_frac >= $opt{min_overlap}) ? 1 : 0;
@@ -104,11 +128,14 @@ for my $sp (@split_records) {
     # ------------------------------
     # Discordant support
     # ------------------------------
-    # For discordant-read clusters, require at least one single discordant
-    # interval to cover >= min_overlap of the split interval.
+    # Conservative rule:
+    #   Require at least one single discordant-read cluster to cover
+    #   >= min_overlap of the split interval.
+    my @discordant_candidates = records_for_chrom(\%discordant_by_chrom, $chrom);
+
     my @discordant_overlaps = grep {
         interval_overlap_len($s, $e, $_->{Start}, $_->{End}) > 0
-    } @{ $discordant_by_chrom{$chrom} || [] };
+    } @discordant_candidates;
 
     my @discordant_hits;
     my $best_discordant_bases = 0;
@@ -132,15 +159,19 @@ for my $sp (@split_records) {
     # Evidence level
     # ------------------------------
     my $level;
+
     if ($depth_support && $discordant_support) {
         $level = 'High';
-    } elsif ($depth_support) {
+    }
+    elsif ($depth_support) {
         $level = 'Moderate';
-    } else {
+    }
+    else {
         $level = 'Low';
     }
 
     my @evidence_types = ('Split');
+
     push @evidence_types, 'Depth'      if $depth_support;
     push @evidence_types, 'Discordant' if $discordant_support;
 
@@ -152,44 +183,44 @@ for my $sp (@split_records) {
     );
 
     push @out_records, {
-        SampleID                    => $sp->{SampleID},
-        Gene                        => $sp->{Gene},
-        Chrom                       => $chrom,
-        Cluster_ID                  => $sp->{Source_ID},
+        SampleID                     => $sp->{SampleID},
+        Gene                         => $sp->{Gene},
+        Chrom                        => $chrom,
+        Cluster_ID                   => $sp->{Source_ID},
 
-        Split_Start                 => $s,
-        Split_End                   => $e,
-        Split_Size                  => $len,
-        Split_Reads                 => meta_value($sp, 'Support_Reads'),
-        Split_Records               => meta_value($sp, 'Support_Records'),
+        Split_Start                  => $s,
+        Split_End                    => $e,
+        Split_Size                   => $len,
+        Split_Reads                  => meta_value($sp, 'Support_Reads'),
+        Split_Records                => meta_value($sp, 'Support_Records'),
 
-        Depth_Support               => $depth_support ? 'Yes' : 'No',
-        Depth_Covered_Bases         => $depth_cov_bases,
-        Depth_Coverage_Fraction     => sprintf('%.4f', $depth_cov_frac),
-        Depth_Record_Count          => scalar(@depth_overlaps),
-        Depth_Range                 => ranges_for_records(@depth_overlaps),
+        Depth_Support                => $depth_support ? 'Yes' : 'No',
+        Depth_Covered_Bases          => $depth_cov_bases,
+        Depth_Coverage_Fraction      => sprintf('%.4f', $depth_cov_frac),
+        Depth_Record_Count           => scalar(@depth_overlaps),
+        Depth_Range                  => ranges_for_records(@depth_overlaps),
 
-        Discordant_Read_Support     => $discordant_support ? 'Yes' : 'No',
-        Discordant_Overlap_Bases    => $best_discordant_bases,
-        Discordant_Overlap_Fraction => sprintf('%.4f', $best_discordant_frac),
-        Discordant_Record_Count     => scalar(@discordant_hits),
-        Discordant_Range            => ranges_for_records(@discordant_hits),
-        Discordant_Cluster_IDs      => uniq_values(map { $_->{Source_ID} } @discordant_hits),
-        Discordant_Reads            => sum_meta_numeric(\@discordant_hits, 'Discordant_Reads'),
-        Median_Insert_Size          => uniq_values(map { meta_value($_, 'Median_Insert_Size') } @discordant_hits),
+        Discordant_Read_Support      => $discordant_support ? 'Yes' : 'No',
+        Discordant_Overlap_Bases     => $best_discordant_bases,
+        Discordant_Overlap_Fraction  => sprintf('%.4f', $best_discordant_frac),
+        Discordant_Record_Count      => scalar(@discordant_hits),
+        Discordant_Range             => ranges_for_records(@discordant_hits),
+        Discordant_Cluster_IDs       => uniq_values(map { $_->{Source_ID} } @discordant_hits),
+        Discordant_Reads             => sum_meta_numeric(\@discordant_hits, 'Discordant_Reads'),
+        Median_Insert_Size           => uniq_values(map { meta_value($_, 'Median_Insert_Size') } @discordant_hits),
 
-        Evidence_Count              => scalar(@evidence_types),
-        Evidence_Level              => $level,
-        Evidence_Types              => join(',', @evidence_types),
+        Evidence_Count               => scalar(@evidence_types),
+        Evidence_Level               => $level,
+        Evidence_Types               => join(',', @evidence_types),
 
-        Best_Start                  => $s,
-        Best_End                    => $e,
-        Best_Size                   => $len,
-        Best_Evidence               => 'Split',
+        Best_Start                   => $s,
+        Best_End                     => $e,
+        Best_Size                    => $len,
+        Best_Evidence                => 'Split',
 
-        Candidate_Status            => candidate_status($level),
-        Source_Records              => join_source_records($sp, \@depth_overlaps, \@discordant_hits),
-        Comment                     => $comment,
+        Candidate_Status             => candidate_status($level),
+        Source_Records               => join_source_records($sp, \@depth_overlaps, \@discordant_hits),
+        Comment                      => $comment,
     };
 }
 
@@ -197,7 +228,7 @@ for my $sp (@split_records) {
        chrom_cmp($a->{Chrom}, $b->{Chrom})
     || $a->{Split_Start} <=> $b->{Split_Start}
     || $a->{Split_End}   <=> $b->{Split_End}
-    || $a->{Cluster_ID}  cmp $b->{Cluster_ID}
+    || $a->{Cluster_ID} cmp $b->{Cluster_ID}
 } @out_records;
 
 write_output($opt{out}, \@out_records);
@@ -227,6 +258,7 @@ sub read_split_records {
     my $chrom_col  = require_any_col($file, \%idx, qw/SV_Chrom Chrom CHROM/);
     my $start_col  = require_any_col($file, \%idx, qw/Cluster_Start Start START/);
     my $end_col    = require_any_col($file, \%idx, qw/Cluster_End End END/);
+
     my $gene_col   = find_col(\%idx, qw/Scan_Genes Gene Genes Target_Gene Target_Name/);
     my $status_col = find_col(\%idx, qw/Cluster_Status Status Candidate_Status/);
 
@@ -234,13 +266,12 @@ sub read_split_records {
 
     for my $row (@$rows) {
         my $sample = normalize_value($row->{$sample_col});
+
         next if $sample ne $sample_filter;
 
         if (defined $status_col) {
             my $status = normalize_value($row->{$status_col});
 
-            # Keep records without status or with Pass.
-            # Remove explicit non-pass records.
             next if $status ne 'NA' && $status !~ /^Pass$/i;
         }
 
@@ -252,7 +283,7 @@ sub read_split_records {
             Type      => 'Split',
             SampleID  => $sample,
             Gene      => $gene,
-            Chrom     => normalize_value($row->{$chrom_col}),
+            Chrom     => normalize_chrom_value($row->{$chrom_col}),
             Start     => $s,
             End       => $e,
             Source_ID => normalize_value($row->{$id_col}),
@@ -298,8 +329,6 @@ sub read_interval_records {
         if ($type eq 'Discordant' && defined $status_col) {
             my $status = normalize_value($row->{$status_col});
 
-            # Remove explicitly bad discordant records.
-            # Keep High/Moderate/Pass/NA records.
             next if $status ne 'NA' && $status =~ /(discard|fail|low)/i;
         }
 
@@ -318,7 +347,7 @@ sub read_interval_records {
             Type      => $type,
             SampleID  => $sample_filter,
             Gene      => $gene,
-            Chrom     => normalize_value($row->{$chrom_col}),
+            Chrom     => normalize_chrom_value($row->{$chrom_col}),
             Start     => $s,
             End       => $e,
             Source_ID => $id,
@@ -332,16 +361,33 @@ sub read_interval_records {
 sub read_table {
     my ($file) = @_;
 
-    open my $fh, '<', $file or die "[ERROR] Cannot open $file: $!\n";
+    open my $fh, '<', $file
+        or die "[ERROR] Cannot open $file: $!\n";
 
     my $header = <$fh>;
-    die "[ERROR] Empty file: $file\n" unless defined $header;
+
+    die "[ERROR] Empty file: $file\n"
+        unless defined $header;
 
     chomp $header;
     $header =~ s/\r$//;
+    $header =~ s/^\s+|\s+$//g;
 
     my @cols = split_line($header);
-    die "[ERROR] No header columns found in $file\n" unless @cols;
+
+    @cols = map {
+        my $x = $_;
+        $x =~ s/^\s+|\s+$//g;
+        $x;
+    } @cols;
+
+    die "[ERROR] No header columns found in $file\n"
+        unless @cols;
+
+    for my $c (@cols) {
+        die "[ERROR] Empty column name found in header of $file\n"
+            unless defined $c && $c ne '';
+    }
 
     my @rows;
 
@@ -354,8 +400,11 @@ sub read_table {
         my @v = split_line($line, scalar(@cols));
 
         my %row;
+
         for my $i (0 .. $#cols) {
-            $row{$cols[$i]} = defined $v[$i] && $v[$i] ne '' ? $v[$i] : 'NA';
+            my $val = defined $v[$i] ? $v[$i] : 'NA';
+            $val =~ s/^\s+|\s+$//g;
+            $row{$cols[$i]} = $val ne '' ? $val : 'NA';
         }
 
         push @rows, \%row;
@@ -369,9 +418,13 @@ sub read_table {
 sub split_line {
     my ($line, $limit) = @_;
 
+    $line = '' unless defined $line;
+
     if ($line =~ /\t/) {
         return split /\t/, $line, defined $limit ? $limit : 0;
     }
+
+    $line =~ s/^\s+|\s+$//g;
 
     return split /\s+/, $line, defined $limit ? $limit : 0;
 }
@@ -391,7 +444,7 @@ sub covered_bases_by_union {
 
         next if $s > $e;
 
-        push @iv, [$s, $e];
+        push @iv, [ $s, $e ];
     }
 
     return (0, 0) unless @iv;
@@ -409,7 +462,8 @@ sub covered_bases_by_union {
 
         if ($s <= $ce + 1) {
             $ce = $e if $e > $ce;
-        } else {
+        }
+        else {
             $covered += $ce - $cs + 1;
             ($cs, $ce) = ($s, $e);
         }
@@ -444,30 +498,63 @@ sub interval_len {
 # Output helpers
 # ============================================================
 
+sub output_header {
+    return qw/
+        SampleID
+        Gene
+        Chrom
+        Cluster_ID
+        Split_Start
+        Split_End
+        Split_Size
+        Split_Reads
+        Split_Records
+        Depth_Support
+        Depth_Covered_Bases
+        Depth_Coverage_Fraction
+        Depth_Record_Count
+        Depth_Range
+        Discordant_Read_Support
+        Discordant_Overlap_Bases
+        Discordant_Overlap_Fraction
+        Discordant_Record_Count
+        Discordant_Range
+        Discordant_Cluster_IDs
+        Discordant_Reads
+        Median_Insert_Size
+        Evidence_Count
+        Evidence_Level
+        Evidence_Types
+        Best_Start
+        Best_End
+        Best_Size
+        Best_Evidence
+        Candidate_Status
+        Source_Records
+        Comment
+    /;
+}
+
 sub write_output {
     my ($file, $records_ref) = @_;
 
     my $dir = dirname($file);
-    make_path($dir) if defined $dir && $dir ne '.' && !-d $dir;
 
-    my @header = qw/
-        SampleID Gene Chrom Cluster_ID
-        Split_Start Split_End Split_Size Split_Reads Split_Records
-        Depth_Support Depth_Covered_Bases Depth_Coverage_Fraction Depth_Record_Count Depth_Range
-        Discordant_Read_Support Discordant_Overlap_Bases Discordant_Overlap_Fraction
-        Discordant_Record_Count Discordant_Range Discordant_Cluster_IDs Discordant_Reads Median_Insert_Size
-        Evidence_Count Evidence_Level Evidence_Types
-        Best_Start Best_End Best_Size Best_Evidence
-        Candidate_Status Source_Records Comment
-    /;
+    make_path($dir)
+        if defined $dir && $dir ne '.' && !-d $dir;
 
-    open my $out, '>', $file or die "[ERROR] Cannot write $file: $!\n";
+    my @header = output_header();
+
+    open my $out, '>', $file
+        or die "[ERROR] Cannot write $file: $!\n";
 
     print $out join("\t", @header), "\n";
 
     for my $r (@$records_ref) {
         my @v = map {
-            defined $r->{$_} && $r->{$_} ne '' ? $r->{$_} : 'NA'
+            clean_tsv_value(
+                defined $r->{$_} && $r->{$_} ne '' ? $r->{$_} : 'NA'
+            )
         } @header;
 
         print $out join("\t", @v), "\n";
@@ -478,6 +565,9 @@ sub write_output {
 
 sub make_comment {
     my ($level, $depth_frac, $discordant_frac, $threshold) = @_;
+
+    $depth_frac      = sprintf('%.4f', $depth_frac);
+    $discordant_frac = sprintf('%.4f', $discordant_frac);
 
     if ($level eq 'High') {
         return "Split candidate supported by depth and discordant evidence";
@@ -495,6 +585,7 @@ sub candidate_status {
 
     return 'High_confidence_candidate'     if $level eq 'High';
     return 'Moderate_confidence_candidate' if $level eq 'Moderate';
+
     return 'Low_confidence_candidate';
 }
 
@@ -557,22 +648,53 @@ sub sum_meta_numeric {
 sub meta_value {
     my ($r, $field) = @_;
 
-    return 'NA' unless defined $r && exists $r->{Meta};
+    return 'NA'
+        unless defined $r && exists $r->{Meta};
 
-    return normalize_value($r->{Meta}{$field}) if exists $r->{Meta}{$field};
+    return normalize_value($r->{Meta}{$field})
+        if exists $r->{Meta}{$field};
 
     my $lc = lc $field;
 
     for my $k (keys %{ $r->{Meta} }) {
-        return normalize_value($r->{Meta}{$k}) if lc($k) eq $lc;
+        return normalize_value($r->{Meta}{$k})
+            if lc($k) eq $lc;
     }
 
     return 'NA';
 }
 
+sub clean_tsv_value {
+    my ($v) = @_;
+
+    $v = 'NA' unless defined $v;
+    $v = 'NA' if $v eq '';
+
+    $v =~ s/\r/ /g;
+    $v =~ s/\n/ /g;
+    $v =~ s/\t/ /g;
+
+    return $v;
+}
+
 # ============================================================
 # General helpers
 # ============================================================
+
+sub check_existing_file {
+    my ($file, $desc) = @_;
+
+    die "[ERROR] $desc not found: $file\n"
+        unless defined $file && -e $file;
+
+    die "[ERROR] $desc is not a regular file: $file\n"
+        unless -f $file;
+
+    die "[ERROR] $desc is empty and has no header: $file\n"
+        unless -s $file;
+
+    return 1;
+}
 
 sub index_by_chrom {
     my @records = @_;
@@ -580,10 +702,94 @@ sub index_by_chrom {
     my %h;
 
     for my $r (@records) {
-        push @{ $h{ $r->{Chrom} } }, $r;
+        my @keys = chrom_keys($r->{Chrom});
+
+        for my $k (@keys) {
+            push @{ $h{$k} }, $r;
+        }
     }
 
     return %h;
+}
+
+sub records_for_chrom {
+    my ($index_ref, $chrom) = @_;
+
+    my @out;
+    my %seen_ref;
+
+    for my $k (chrom_keys($chrom)) {
+        next unless exists $index_ref->{$k};
+
+        for my $r (@{ $index_ref->{$k} }) {
+            my $id = "$r";
+            next if $seen_ref{$id}++;
+
+            push @out, $r;
+        }
+    }
+
+    return @out;
+}
+
+sub chrom_keys {
+    my ($chrom) = @_;
+
+    $chrom = normalize_chrom_value($chrom);
+
+    return ('NA') if $chrom eq 'NA';
+
+    my @keys;
+    my %seen;
+
+    my $add = sub {
+        my ($x) = @_;
+        return unless defined $x && $x ne '';
+        return if $seen{$x}++;
+        push @keys, $x;
+    };
+
+    $add->($chrom);
+
+    if ($chrom =~ /^chr(.+)$/i) {
+        my $no_chr = $1;
+        $add->($no_chr);
+
+        if (uc($no_chr) eq 'M') {
+            $add->('MT');
+            $add->('chrMT');
+        }
+        elsif (uc($no_chr) eq 'MT') {
+            $add->('M');
+            $add->('chrM');
+        }
+    }
+    else {
+        $add->("chr$chrom");
+
+        if (uc($chrom) eq 'M') {
+            $add->('MT');
+            $add->('chrMT');
+        }
+        elsif (uc($chrom) eq 'MT') {
+            $add->('M');
+            $add->('chrM');
+        }
+    }
+
+    return @keys;
+}
+
+sub normalize_chrom_value {
+    my ($v) = @_;
+
+    $v = normalize_value($v);
+
+    return 'NA' if $v eq 'NA';
+
+    $v =~ s/^\s+|\s+$//g;
+
+    return $v;
 }
 
 sub index_cols {
@@ -592,8 +798,16 @@ sub index_cols {
     my %idx;
 
     for my $c (@$cols_ref) {
-        $idx{$c} = $c;
-        $idx{lc $c} = $c;
+        next unless defined $c;
+
+        my $raw = $c;
+        my $lc  = lc $c;
+
+        die "[ERROR] Duplicate column name found: $raw\n"
+            if exists $idx{$raw};
+
+        $idx{$raw} = $raw;
+        $idx{$lc}  = $raw;
     }
 
     return %idx;
@@ -616,7 +830,8 @@ sub require_any_col {
     my $c = find_col($idx_ref, @candidates);
 
     die "[ERROR] Required column not found in $file. Accepted names: "
-        . join(',', @candidates) . "\n"
+      . join(',', @candidates)
+      . "\n"
         unless defined $c;
 
     return $c;
@@ -655,12 +870,11 @@ sub guess_gene_from_depth_file {
     return 'NA' if $v eq 'NA';
 
     my $base = $v;
+
     $base =~ s{.*/}{};
     $base =~ s/\.depth\.tsv$//;
 
-    # Example:
-    # HCM_FHOD3_DEL_1000_2000_rep2_FHOD3_NM_001281740_chr18_...
-    if ($base =~ /_(\w+)_N[MR]_\d+/) {
+    if ($base =~ /_([A-Za-z0-9.-]+)_N[MR]_\d+/) {
         return $1;
     }
 
@@ -705,6 +919,7 @@ sub chrom_rank {
     $c =~ s/^chr//i;
 
     return $c if $c =~ /^\d+$/;
+
     return 23 if uc($c) eq 'X';
     return 24 if uc($c) eq 'Y';
     return 25 if uc($c) =~ /^(M|MT)$/;
@@ -729,7 +944,7 @@ sub log_msg {
 sub usage {
     return <<'USAGE';
 Usage:
-  perl merge_evidence.pl \
+  perl bin/merge_evidence.pl \
     --sample SAMPLE_ID \
     --depth SAMPLE.depth_candidates.cusum.all.tsv \
     --split SAMPLE.split_reads.clusters.tsv \
@@ -737,21 +952,28 @@ Usage:
     --out SAMPLE.merged_candidates.tsv
 
 Optional:
-  --config FILE          Accepted for compatibility with HCMExonDel.pl; not used.
-  --min-overlap FLOAT    Minimum fraction of split interval covered by evidence. Default: 0.90
+  --min-overlap FLOAT
+      Minimum fraction of split interval covered by supporting evidence.
+      Default: 0.90
 
-New merging logic:
+Merging logic:
   1. Use split_reads.clusters.tsv as the core candidate list.
-  2. For each split cluster, calculate how many split bases are covered by
-     overlapping depth intervals. Depth intervals are merged by union first.
-  3. For discordant evidence, require at least one discordant-read cluster
+  2. For each passed split cluster, calculate how many split bases are
+     covered by overlapping CUSUM depth intervals.
+  3. Depth intervals are merged by union before coverage calculation.
+  4. For discordant evidence, require at least one discordant-read cluster
      to cover >= min-overlap of the split interval.
-  4. Confidence:
+  5. Confidence:
        High     = Split + Depth + Discordant
        Moderate = Split + Depth only
        Low      = Split without Depth
 
-Coordinates are treated as 1-based closed intervals.
+Empty-result behavior:
+  If no passed split-read cluster exists, write a header-only output file
+  and exit normally.
+
+Coordinates:
+  1-based closed intervals.
 USAGE
 }
 
