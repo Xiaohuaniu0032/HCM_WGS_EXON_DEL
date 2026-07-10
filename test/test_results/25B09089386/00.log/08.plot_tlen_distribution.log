@@ -1,0 +1,11 @@
+[INFO] Done.
+[INFO] Input: /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/03.discordant_reads/25B09089386.valid_tlen.tsv
+[INFO] Output figure: /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/03.discordant_reads/25B09089386.tlen_distribution.pdf
+[INFO] Summary file: /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/03.discordant_reads/25B09089386.tlen_distribution.pdf.summary.tsv
+[INFO] Total read pairs: 1,000,000
+[INFO] Mean insert size: 276.204
+[INFO] SD insert size: 62.663
+[INFO] Median insert size: 271.000
+[INFO] MAD: 40.000
+[INFO] Robust SD: 59.304
+[INFO] Abnormal TLEN threshold: 448.912

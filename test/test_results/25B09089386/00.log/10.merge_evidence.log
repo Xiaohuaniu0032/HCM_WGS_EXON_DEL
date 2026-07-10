@@ -1,0 +1,13 @@
+[INFO] Merge evidence started
+[INFO] Sample     : 25B09089386
+[INFO] Depth file : /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/01.depth/25B09089386.depth_candidates.cusum.all.tsv
+[INFO] Split file : /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/02.split_reads/25B09089386.split_reads.clusters.tsv
+[INFO] Discordant : /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/03.discordant_reads/25B09089386.discordant_reads.tsv
+[INFO] Min overlap: 0.90
+[INFO] Output     : /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/04.candidates/25B09089386.merged_candidates.tsv
+[INFO] Split clusters loaded : 7
+[INFO] Depth records loaded   : 918
+[INFO] Discordant loaded      : 180
+[INFO] Output candidates written: 7
+[INFO] High=3 Moderate=2 Low=2
+[INFO] Merge evidence finished

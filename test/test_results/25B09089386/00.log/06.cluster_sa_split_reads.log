@@ -1,0 +1,22 @@
+[INFO] SA split-read clustering started
+[INFO] Config: /ehpcdata/fulongfei/git_repo/HCMExonDel/conf/hcm_exondel.example.conf
+[INFO] Input: /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/02.split_reads/25B09089386.split_reads.tsv
+[INFO] PASS cluster output: /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/02.split_reads/25B09089386.split_reads.clusters.tsv
+[INFO] All cluster output: /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/02.split_reads/25B09089386.split_reads.all_clusters.tsv
+[INFO] Failed cluster output: /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/02.split_reads/25B09089386.split_reads.failed_clusters.tsv
+[INFO] Supporting reads output: /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/02.split_reads/25B09089386.split_reads.supporting_reads.tsv
+[INFO] SA_SPLIT_CLUSTER_WINDOW: 20
+[INFO] SA_SPLIT_MIN_SUPPORT_READS: 5
+[INFO] Input data rows: 933
+[INFO] Valid deletion-gap events loaded: 933
+[INFO] Skipped non-deletion events: 0
+[INFO] Skipped invalid coordinate events: 0
+[INFO] Skipped duplicated events: 0
+[INFO] SA split-read clustering finished
+[INFO] Total clusters: 830
+[INFO] PASS clusters: 7
+[INFO] Failed clusters: 823
+[INFO] PASS cluster output: /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/02.split_reads/25B09089386.split_reads.clusters.tsv
+[INFO] All cluster output: /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/02.split_reads/25B09089386.split_reads.all_clusters.tsv
+[INFO] Failed cluster output: /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/02.split_reads/25B09089386.split_reads.failed_clusters.tsv
+[INFO] Supporting reads output: /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/02.split_reads/25B09089386.split_reads.supporting_reads.tsv

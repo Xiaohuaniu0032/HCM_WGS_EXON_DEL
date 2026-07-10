@@ -1,0 +1,16 @@
+[INFO] Done.
+[INFO] Config: /ehpcdata/fulongfei/git_repo/HCMExonDel/conf/hcm_exondel.example.conf
+[INFO] BAM: /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/00.target_bam/25B09089386.target.bam
+[INFO] Output: /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/03.discordant_reads/25B09089386.valid_tlen.tsv
+[INFO] SAMTOOLS: /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools
+[INFO] MIN_MAPQ: 20
+[INFO] EXCLUDE_DUPLICATES: 1
+[INFO] TLEN_THREADS: 4
+[INFO] TLEN_MAX_PAIRS: 1000000
+[INFO] TLEN_RANDOM_SEED: 20260701
+[INFO] Require FLAG: 2
+[INFO] Exclude FLAG: 3340
+[INFO] Total records after samtools filtering: 2674803
+[INFO] Valid positive TLEN count: 1337394
+[INFO] Output TLEN count: 1000000
+[INFO] Reservoir sampling was applied because valid TLEN count exceeded TLEN_MAX_PAIRS.

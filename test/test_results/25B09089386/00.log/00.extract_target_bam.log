@@ -1,0 +1,21 @@
+[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
+[WARN] Duplicate core gene in HCM_CORE_GENE_LIST will be ignored: ALPK3 at line 10
+[WARN] Duplicate core gene in HCM_CORE_GENE_LIST will be ignored: TRIM63 at line 26
+[WARN] The following core genes were not found in REFSEQ_MANE_SELECT_GENE_TXT and will be skipped:
+        MT-TI
+[CMD] /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools view '-@' 4 -bh -M -L /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/00.target_bam/25B09089386.target_regions.bed -o /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/00.target_bam/25B09089386.target.unsorted.tmp.bam /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam
+[W::hts_idx_load3] The index file is older than the data file: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam.bai
+[CMD] /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools sort '-@' 4 -o /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/00.target_bam/25B09089386.target.bam /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/00.target_bam/25B09089386.target.unsorted.tmp.bam
+[bam_sort_core] merging from 0 files and 4 in-memory blocks...
+[CMD] /opt/PUB/software/Bin/samtools-1.16.1/bin/samtools index '-@' 4 /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/00.target_bam/25B09089386.target.bam
+[INFO] Target BAM extraction finished.
+[INFO] Sample: 25B09089386
+[INFO] Input BAM: /ehpcdata/fulongfei/project/XJ_HCM_WGS_FHOD3/JX_2/25B09089386.final.merge.bam
+[INFO] Output BAM: /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/00.target_bam/25B09089386.target.bam
+[INFO] Output BAM index: /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/00.target_bam/25B09089386.target.bam.bai
+[INFO] Target BED: /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/00.target_bam/25B09089386.target_regions.bed
+[INFO] Target region TSV: /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/00.target_bam/25B09089386.target_regions.tsv
+[INFO] Summary: /ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/00.target_bam/25B09089386.target_bam.summary.tsv
+[INFO] TARGET_REGION_FLANK: 5000
+[INFO] TARGET_BAM_THREADS: 4
+[INFO] Skipped core genes not found in annotation: MT-TI
