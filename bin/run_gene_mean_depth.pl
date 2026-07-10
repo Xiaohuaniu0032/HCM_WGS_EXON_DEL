@@ -202,10 +202,10 @@ my %observed_gene = map { $_->{gene} => 1 } @genes;
 my @missing_genes = grep { !exists $observed_gene{$_} } sort keys %{$core_gene_ref};
 
 if (@missing_genes) {
-    die "[ERROR] The following genes in HCM_CORE_GENE_LIST were not found in REFSEQ_MANE_SELECT_GENE_TXT:\n"
-      . join("\n", map { "        $_" } @missing_genes)
-      . "\n";
+    warn "[WARNING] The following genes in HCM_CORE_GENE_LIST were not found in REFSEQ_MANE_SELECT_GENE_TXT and will be skipped:\n" .
+         join("\n", map { "        $_" } @missing_genes) . "\n";
 }
+
 
 print "[INFO] Window-based depth analysis started\n";
 print "[INFO] Sample : $sample\n";
