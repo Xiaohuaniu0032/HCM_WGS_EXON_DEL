@@ -491,7 +491,6 @@ sub write_sample_shell {
         " ",
         shell_quote($python),
         shell_quote($script_ref->{plot_depth}),
-        "--conf",   shell_quote($config),
         "--input",  shell_quote($out_ref->{all_window_ratio}),
         "--output", shell_quote($out_ref->{depth_plot_pdf}),
     );
