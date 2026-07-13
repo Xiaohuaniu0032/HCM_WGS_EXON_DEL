@@ -1,0 +1,2 @@
+Input_File	Total_Read_Pairs	Mean_Insert_Size	SD_Insert_Size	Median_Insert_Size	MAD	MAD_Scale	Robust_SD	N_MAD	Abnormal_TLEN_Threshold	Q1	Q3	P95	P99	Plot_Upper_P99_5
+/ehpcdata/fulongfei/git_repo/HCMExonDel/test/test_results/25B09089386/03.discordant_reads/25B09089386.valid_tlen.tsv	1000000	276.204	62.663	271.000	40.000	1.4826	59.304	3	448.912	233.000	314.000	388.000	448.000	471.000

@@ -11,6 +11,16 @@ test/test_results/*/tmp/*
 test/test_results/*/03.discordant_reads/*.valid_tlen.tsv
 
 
+# 00.target_bam
+test/test_results/*/00.target_bam/*.bam
+test/test_results/*/00.target_bam/*.bam.bai
+
+# 01.depth
+test/test_results/*/01.depth/*base_depth_ratio
+test/test_results/*/01.depth/*cusum
+test/test_results/*/01.depth/*gene_depth_files
+
+# 
 
 simulate_fq/
 test/test_results/25B09089387/
