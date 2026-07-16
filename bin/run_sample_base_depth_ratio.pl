@@ -190,8 +190,8 @@ sub merge_ratio_files {
 
         my $expected = join(
             "\t",
+            "#CHROM",
             qw/
-              #CHROM
               POS
               Depth
               Median_Depth
